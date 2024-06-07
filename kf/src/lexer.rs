@@ -138,9 +138,11 @@ impl<'a> Tokenizer<'a> {
                         if self.look_ahead(&r.get_range().start) {
                             // start parsing this token
                             status = TokenizeState::ParseRange(r.clone());
-                            self.skip_n = r.get_range().start.len();
+                            // -1 because we don't need to skip the current character
+                            // it's already "skipped"
+                            self.skip_n = r.get_range().start.len() - 1;
                             start_point = self.curr_point;
-                            start_pos = self.pos + self.skip_n;
+                            start_pos = self.pos + r.get_range().start.len();
                             found = true;
                             break;
                         }
@@ -148,15 +150,49 @@ impl<'a> Tokenizer<'a> {
                     if found {
                         continue;
                     }
+                    // try parsing characters
+                    // this is a special case - if Lang::special_sym contains >'< then
+                    // we won't emit any errors if parsing fails
+                    if c == '\'' {
+                        // this might be:
+                        // 1. simple character like 'a'
+                        // 2. escapte sequence like '\n'
+                        // 3. non character at all if >'< is a special character (e.g 'lifecycle)
+                        // 'a'
+                        //   ^-- offset = 2
+                        // ^-- self.pos
+                        if let Some(cc) = self.get_nth(2) {
+                            if cc == '\'' {
+                                self.skip_n = 2;
+                                tokens.push(Token {
+                                    kind: TokenKind::Character,
+                                    text: self.code[self.pos + 1..self.pos + 2].to_string(),
+                                    start: self.curr_point,
+                                    end: TextPoint {
+                                        line: self.curr_point.line,
+                                        col: self.curr_point.col + 2,
+                                    },
+                                });
+                                continue;
+                            }
+                        } else {
+                            // end of file or UTF-8 character
+                            errors.push(ParsingError {
+                                msg: "Unexpected end of file or UTF-8 character encountered".into(),
+                                details: "UTF-8 not supported as character literals".into(),
+                                at: self.curr_point,
+                            });
+                        }
+                    }
                     // special symbol?
                     for s in self.lang.special_sym.iter() {
                         if self.look_ahead(&s) {
                             // insert token and move ahead!
                             // we can do that because special symbol can't cross a line
-                            self.skip_n = s.len();
+                            self.skip_n = s.len() - 1;
                             tokens.push(Token {
                                 kind: TokenKind::Symbol,
-                                text: self.code[self.pos..self.skip_n].to_string(),
+                                text: self.code[self.pos..self.pos + s.len()].to_string(),
                                 start: self.curr_point,
                                 end: TextPoint {
                                     line: self.curr_point.line,
@@ -216,26 +252,44 @@ impl<'a> Tokenizer<'a> {
                             start: start_point,
                             end: self.curr_point,
                         });
+                        self.skip_n = r.get_range().end.len() - 1;
                         continue;
                     }
                 }
             }
         }
+        // handle eof case
         match status {
             TokenizeState::Idle => {}
             TokenizeState::ParseLiteral => {
-                errors.push(ParsingError {
-                    msg: "Unexpected end of file".to_string(),
-                    details: "File should be terminated with a new line".to_string(),
-                    at: self.curr_point,
+                tokens.push(Token {
+                    kind: TokenKind::Literal,
+                    text: self.code[start_pos..self.pos].to_string(),
+                    start: start_point,
+                    end: self.curr_point,
                 });
             }
-            TokenizeState::ParseRange(_) => {
-                errors.push(ParsingError {
-                    msg: "Unexpected end of file".to_string(),
-                    details: "String or comment needs to be terminated".to_string(),
-                    at: self.curr_point,
-                });
+            TokenizeState::ParseRange(r) => {
+                if r.get_range().eof_allowed {
+                    let kind = match r {
+                        RangeBased::LineComment(_)
+                        | RangeBased::DocComment(_)
+                        | RangeBased::Comment(_) => TokenKind::Comment,
+                        RangeBased::String(_) | RangeBased::RawString(_) => TokenKind::String,
+                    };
+                    tokens.push(Token {
+                        kind,
+                        text: self.code[start_pos..self.pos].to_string(),
+                        start: start_point,
+                        end: self.curr_point,
+                    });
+                } else {
+                    errors.push(ParsingError {
+                        msg: "Unexpected end of file".to_string(),
+                        details: "String or comment needs to be terminated".to_string(),
+                        at: self.curr_point,
+                    });
+                }
             }
         }
         (tokens, errors)
@@ -246,6 +300,14 @@ impl<'a> Tokenizer<'a> {
             code.starts_with(phrase)
         } else {
             return false;
+        }
+    }
+
+    fn get_nth(&self, offset: usize) -> Option<char> {
+        if let Some(nth) = self.code.get(offset..offset + 1) {
+            nth.chars().next()
+        } else {
+            None
         }
     }
 
@@ -274,7 +336,14 @@ mod tests {
 
     #[test]
     fn one_token_test() {
-        let tcs = ["fn\n", "// comment\n", "/**/\n"];
+        #[rustfmt::skip]
+        let tcs = [
+            "fn\n", "// comment\n", "/**/\n", "r#\"\"#", "r#\"string\"#",
+            // characters
+            "'a'",
+            // symbols
+            "++", "+", "!", "#[", "<=", "=",
+        ];
         for code in tcs {
             println!("Testing {code}");
             let (t, e) = tokenize(&Lang::new(), code);
