@@ -1,6 +1,7 @@
 use crate::lang_def::{Lang, ParsingError, Range, RangeBased, TextPoint};
 use std::fmt;
 
+#[derive(Debug, PartialEq)]
 pub enum TokenKind {
     Keyword,
     // Identifier,
@@ -191,7 +192,7 @@ impl<'a> Tokenizer<'a> {
                                 if let Some(ce) = self.get_nth(3) {
                                     if ce == '\'' {
                                         self.skip_n = 3;
-                                        tokens.push(Token{
+                                        tokens.push(Token {
                                             kind: TokenKind::Character,
                                             text: self.code[self.pos + 1..self.pos + 3].to_string(),
                                             start: self.curr_point,
@@ -200,17 +201,18 @@ impl<'a> Tokenizer<'a> {
                                                 col: self.curr_point.col + 3,
                                             },
                                         });
-                                        continue
+                                        continue;
                                     }
                                 } else {
-                                    errors.push(self.error_eof("Character literal should be closed"));
+                                    errors
+                                        .push(self.error_eof("Character literal should be closed"));
                                 }
                             }
-                        } 
+                        }
                         // if we're here, there are two options: >'< is a symbol or we have
                         // parsing error
                         if !self.lang.special_sym.contains(&"'".to_string()) {
-                            errors.push(ParsingError{
+                            errors.push(ParsingError {
                                 msg: "Syntax error while parsing character literal".into(),
                                 details: "Expected formats either like 'a' or '\n'".into(),
                                 at: self.curr_point,
@@ -220,6 +222,16 @@ impl<'a> Tokenizer<'a> {
                     // special symbol?
                     for s in self.lang.special_sym.iter() {
                         if self.look_ahead(&s) {
+                            // we need to be careful with >_< (underscore) because:
+                            // `call(_)` - this is symbol,
+                            // `_variable` - this is literal
+                            // `__` - this is literal (another corner case!)
+                            if let Some(cc) = self.get_nth(1) {
+                                if cc.is_ascii_alphanumeric() || cc == '_' {
+                                    // next character is alphanumeric - this is literal case
+                                    break;
+                                }
+                            }
                             // insert token and move ahead!
                             // we can do that because special symbol can't cross a line
                             self.skip_n = s.len() - 1;
@@ -248,14 +260,9 @@ impl<'a> Tokenizer<'a> {
                 }
                 TokenizeState::ParseLiteral => {
                     // check finish conditions
-                    if !(c.is_ascii_alphanumeric()) {
+                    if !(c.is_ascii_alphanumeric() || c == '_') {
                         status = TokenizeState::Idle;
-                        tokens.push(Token {
-                            kind: TokenKind::Literal,
-                            text: self.code[start_pos..self.pos].to_string(),
-                            start: start_point,
-                            end: self.curr_point,
-                        });
+                        tokens.push(self.gen_token_literal_or_keyword(start_pos, start_point));
                         self.repeat_this_pass = true;
                         continue;
                     }
@@ -264,6 +271,7 @@ impl<'a> Tokenizer<'a> {
                     let mut skip_this_pass = false;
                     for ex in r.get_range().exceptions.iter() {
                         if self.look_ahead(&ex) {
+                            self.skip_n = ex.len() - 1;
                             skip_this_pass = true;
                             break;
                         }
@@ -295,12 +303,9 @@ impl<'a> Tokenizer<'a> {
         match status {
             TokenizeState::Idle => {}
             TokenizeState::ParseLiteral => {
-                tokens.push(Token {
-                    kind: TokenKind::Literal,
-                    text: self.code[start_pos..self.pos].to_string(),
-                    start: start_point,
-                    end: self.curr_point,
-                });
+                // artificial increment pos to capture the last variable
+                self.pos += 1;
+                tokens.push(self.gen_token_literal_or_keyword(start_pos, start_point));
             }
             TokenizeState::ParseRange(r) => {
                 if r.get_range().eof_allowed {
@@ -312,7 +317,7 @@ impl<'a> Tokenizer<'a> {
                     };
                     tokens.push(Token {
                         kind,
-                        text: self.code[start_pos..self.pos].to_string(),
+                        text: self.code[start_pos..].to_string(),
                         start: start_point,
                         end: self.curr_point,
                     });
@@ -359,6 +364,22 @@ impl<'a> Tokenizer<'a> {
             at: self.curr_point,
         }
     }
+
+    fn gen_token_literal_or_keyword(&self, start_pos: usize, start_point: TextPoint) -> Token {
+        let text = self.code[start_pos..self.pos].to_string();
+        let kind = if self.lang.keywords.contains(&text) {
+            TokenKind::Keyword
+        } else {
+            TokenKind::Literal
+        };
+
+        Token {
+            kind,
+            text,
+            start: start_point,
+            end: self.curr_point,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -379,15 +400,50 @@ mod tests {
     fn one_token_test() {
         #[rustfmt::skip]
         let tcs = [
-            "fn\n", "// comment\n", "/**/\n", "r#\"\"#", "r#\"string\"#",
+            // keywords
+            ("fn\n", "fn", TokenKind::Keyword),
+            ("else ", "else", TokenKind::Keyword),
+            ("for", "for", TokenKind::Keyword),
+            // comments
+            ("// comment\n", " comment", TokenKind::Comment),
+            ("// comment\n\n", " comment", TokenKind::Comment),
+            ("//comment ółń", "comment ółń", TokenKind::Comment),
+            ("//comment //abc", "comment //abc", TokenKind::Comment),
+            ("/**/\n", "", TokenKind::Comment),
+            ("/* */", " ", TokenKind::Comment),
+            ("/** abc **/", "* abc *", TokenKind::Comment),
+            // strings
+            ("r#\"\"#", "", TokenKind::String),
+            ("r#\"_\\\"_\"#", "_\\\"_", TokenKind::String),
+            ("r#\"string\"#", "string", TokenKind::String),
+            ("\"string\"", "string", TokenKind::String),
+            ("\"string\\\"\"", "string\\\"", TokenKind::String),
             // characters
-            "'a'", "'\\n'",
+            ("'a'", "a", TokenKind::Character),
+            ("'_'", "_", TokenKind::Character),
+            ("'\\n'", "\\n", TokenKind::Character),
             // symbols
-            "++", "+", "!", "#[", "<=", "=",
+            ("++", "++", TokenKind::Symbol),
+            ("+\t", "+", TokenKind::Symbol),
+            ("!", "!", TokenKind::Symbol),
+            ("#[ ", "#[", TokenKind::Symbol),
+            ("<=", "<=", TokenKind::Symbol),
+            (" <=", "<=", TokenKind::Symbol),
+            ("=\n", "=", TokenKind::Symbol),
+            ("_", "_", TokenKind::Symbol),
+            // literals
+            ("1920", "1920", TokenKind::Literal),
+            ("_beta", "_beta", TokenKind::Literal),
+            ("__", "__", TokenKind::Literal),
+            (" _zeta_", "_zeta_", TokenKind::Literal),
+            ("a_b_c", "a_b_c", TokenKind::Literal),
+            ("CamelCase\t\t", "CamelCase", TokenKind::Literal),
+            ("Kulfon", "Kulfon", TokenKind::Literal),
+            ("\tmac091cc\t\t", "mac091cc", TokenKind::Literal),
         ];
         for code in tcs {
-            println!("Testing {code}");
-            let (t, e) = tokenize(&Lang::new(), code);
+            println!("Testing {}", code.0);
+            let (t, e) = tokenize(&Lang::new(), code.0);
             for token in t.iter() {
                 println!("Result: {token}");
             }
@@ -396,6 +452,8 @@ mod tests {
             }
             assert_eq!(t.len(), 1);
             assert_eq!(e.len(), 0);
+            assert_eq!(t[0].text, code.1);
+            assert_eq!(t[0].kind, code.2);
         }
     }
 }

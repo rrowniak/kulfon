@@ -16,3 +16,11 @@ Experiments with context free grammars (CFG) and attempts to create a new langua
 - No undefined behaviours
 - Designed for easy development, prototyping, frequent iterations
 - Easy integration with `C` libraries - instead of rewriting whole world just use what's already proven
+
+## Hello world
+Hello world example in Kulfon:
+```rust
+fn main() {
+    print("Hello world!");
+}
+```
