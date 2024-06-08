@@ -176,12 +176,45 @@ impl<'a> Tokenizer<'a> {
                                 continue;
                             }
                         } else {
-                            // end of file or UTF-8 character
-                            errors.push(ParsingError {
-                                msg: "Unexpected end of file or UTF-8 character encountered".into(),
-                                details: "UTF-8 not supported as character literals".into(),
+                            // There is one edge case which is not handled here: 'a<EOF>.
+                            // But this is a theoretical case which might be relevant to Rust.
+                            // Kulfon lang shouldn't be affected
+                            errors.push(self.error_eof("Character literal should be closed"));
+                            continue;
+                        }
+
+                        // '\n'
+                        //  ^----- offset 1
+                        //    ^----- offset 3
+                        if let Some(cc) = self.get_nth(1) {
+                            if cc == '\\' {
+                                if let Some(ce) = self.get_nth(3) {
+                                    if ce == '\'' {
+                                        self.skip_n = 3;
+                                        tokens.push(Token{
+                                            kind: TokenKind::Character,
+                                            text: self.code[self.pos + 1..self.pos + 3].to_string(),
+                                            start: self.curr_point,
+                                            end: TextPoint {
+                                                line: self.curr_point.line,
+                                                col: self.curr_point.col + 3,
+                                            },
+                                        });
+                                        continue
+                                    }
+                                } else {
+                                    errors.push(self.error_eof("Character literal should be closed"));
+                                }
+                            }
+                        } 
+                        // if we're here, there are two options: >'< is a symbol or we have
+                        // parsing error
+                        if !self.lang.special_sym.contains(&"'".to_string()) {
+                            errors.push(ParsingError{
+                                msg: "Syntax error while parsing character literal".into(),
+                                details: "Expected formats either like 'a' or '\n'".into(),
                                 at: self.curr_point,
-                            });
+                            })
                         }
                     }
                     // special symbol?
@@ -313,8 +346,16 @@ impl<'a> Tokenizer<'a> {
 
     fn error_non_ascii(&self) -> ParsingError {
         ParsingError {
-            msg: "Unexpected ASCII character".to_string(),
+            msg: "Unexpected non-ASCII character".to_string(),
             details: "Non-ASCII characters allowed in strings or comments only".to_string(),
+            at: self.curr_point,
+        }
+    }
+
+    fn error_eof(&self, details: &str) -> ParsingError {
+        ParsingError {
+            msg: "Unexpected end of file".to_string(),
+            details: details.to_string(),
             at: self.curr_point,
         }
     }
@@ -340,7 +381,7 @@ mod tests {
         let tcs = [
             "fn\n", "// comment\n", "/**/\n", "r#\"\"#", "r#\"string\"#",
             // characters
-            "'a'",
+            "'a'", "'\\n'",
             // symbols
             "++", "+", "!", "#[", "<=", "=",
         ];
