@@ -1,3 +1,10 @@
+// ===================================================
+// This file is part of the Kulfon compiler.
+// Author: Rafał Równiak
+// License: Read LICENSE file
+// Created on: 04.06.2024
+// ---------------------------------------------------
+
 #[rustfmt::skip]
 const RUST_KEYWORDS: &[&str] = &[
     // Keywords used in the language
@@ -68,6 +75,14 @@ pub struct Lang {
 }
 
 impl Lang {
+    pub fn new_empty() -> Lang {
+        Lang {
+            keywords: Vec::new(),
+            reserved_keywords: Vec::new(),
+            special_sym: Vec::new(),
+            range_based: Vec::new(),
+        }
+    }
     pub fn new() -> Lang {
         let mut sym = KULFON_SPEC_SYMBOLS
             .iter()

@@ -1,3 +1,10 @@
+// ===================================================
+// This file is part of the Kulfon compiler.
+// Author: Rafał Równiak
+// License: Read LICENSE file
+// Created on: 04.06.2024
+// ---------------------------------------------------
+
 use crate::lang_def::{Lang, ParsingError, Range, RangeBased, TextPoint};
 use std::fmt;
 
@@ -30,10 +37,10 @@ impl fmt::Display for TokenKind {
 }
 
 pub struct Token {
-    kind: TokenKind,
-    text: String,
-    start: TextPoint,
-    end: TextPoint,
+    pub kind: TokenKind,
+    pub text: String,
+    pub start: TextPoint,
+    pub end: TextPoint,
 }
 
 impl fmt::Display for Token {
