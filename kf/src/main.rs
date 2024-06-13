@@ -8,9 +8,11 @@
 mod lexer;
 mod lang_def;
 mod bnf_parser;
+mod parser;
 
 fn main() {
     let kulfon_lang = lang_def::Lang::new();
     lexer::tokenize(&kulfon_lang, "");
     _ = bnf_parser::parse("");
+    _ = parser::parse("");
 }

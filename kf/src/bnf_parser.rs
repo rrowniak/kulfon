@@ -8,6 +8,7 @@
 // Backus–Naur form grammar parser
 use crate::lang_def;
 use crate::lexer;
+use core::fmt;
 use std::boxed::Box;
 
 /*
@@ -31,14 +32,81 @@ Simplified BNF grammar for BNF parser
 <cnt> ::= "?" | "*" | "+" | E
 */
 
+pub struct ParseIter<'a, T> {
+    vec: &'a [T],
+    pos_of_next: usize,
+}
+
+impl<'a, T> ParseIter<'a, T> {
+    fn new(vec: &'a [T]) -> Self {
+        Self {
+            vec,
+            pos_of_next: 0,
+        }
+    }
+
+    fn lookahead(&self, offset: usize) -> Option<&'a T> {
+        if self.pos_of_next == 0 {
+            // iterator is not started yet
+            return None;
+        }
+        if self.pos_of_next + offset - 1 < self.vec.len() {
+            return Some(&self.vec[self.pos_of_next + offset - 1]);
+        }
+        None
+    }
+}
+
+impl<'a, T> Iterator for ParseIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.pos_of_next >= self.vec.len() {
+            return None;
+        }
+        let item = &self.vec[self.pos_of_next];
+        self.pos_of_next += 1;
+        Some(item)
+    }
+}
+
+type Iter<'a> = ParseIter<'a, lexer::Token>;
+
+#[derive(PartialEq, Debug)]
 pub enum Symbol {
     Terminal(String),
     NonTerminal(String),
     Group(Vec<Symbol>),
-    OrGroup(Vec<Symbol>),
+    Or(Vec<Symbol>),
     ZeroOrMore(Box<Symbol>),
     AtLeastOnce(Box<Symbol>),
     ZeroOrOne(Box<Symbol>),
+}
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Symbol::Terminal(t) => write!(f, "term:{}", t),
+            Symbol::NonTerminal(nt) => write!(f, "nonterm:{}", nt),
+            Symbol::Group(g) => {
+                write!(f, "group[")?;
+                for s in g {
+                    write!(f, "{},", s)?;
+                }
+                write!(f, "]")
+            }
+            Symbol::Or(g) => {
+                write!(f, "or[")?;
+                for s in g {
+                    write!(f, "{},", s)?;
+                }
+                write!(f, "]")
+            }
+            Symbol::ZeroOrOne(s) => write!(f, "{}+", s),
+            Symbol::AtLeastOnce(s) => write!(f, "{}+", s),
+            Symbol::ZeroOrMore(s) => write!(f, "{}*", s),
+        }
+    }
 }
 
 pub struct Rule {
@@ -86,7 +154,8 @@ pub fn parse(grammar: &str) -> Result<BNF, String> {
     // this is going to be quick & dirty parsing attempt since
     // a correct input is expected - it's just an internal stuff
     let mut bnf = BNF { rules: Vec::new() };
-    let mut iter = tokens.iter();
+    // let mut iter = tokens.iter();
+    let mut iter = ParseIter::new(&tokens);
     let mut line = 1;
     while let Some(t) = iter.next() {
         if t.kind == lexer::TokenKind::Comment {
@@ -127,11 +196,7 @@ fn err_eof() -> String {
     "BNF syntax error: unexpected end of program".into()
 }
 
-fn get_symbols_term(
-    t: &lexer::Token,
-    iter: &mut std::slice::Iter<lexer::Token>,
-    line: usize,
-) -> Result<Symbol, String> {
+fn get_symbols_term(t: &lexer::Token, iter: &mut Iter, line: usize) -> Result<Symbol, String> {
     if t.kind == lexer::TokenKind::String {
         Ok(get_symbols_count(
             Symbol::Terminal(t.text.clone()),
@@ -146,20 +211,12 @@ fn get_symbols_term(
     }
 }
 
-fn get_symbols_nonterm(
-    t: &lexer::Token,
-    iter: &mut std::slice::Iter<lexer::Token>,
-    line: usize,
-) -> Result<Symbol, String> {
+fn get_symbols_nonterm(t: &lexer::Token, iter: &mut Iter, line: usize) -> Result<Symbol, String> {
     let nonterm = get_non_terminal(t, iter, line)?;
     Ok(get_symbols_count(nonterm, iter, line))
 }
 
-fn get_symbols_group(
-    t: &lexer::Token,
-    iter: &mut std::slice::Iter<lexer::Token>,
-    line: usize,
-) -> Result<Symbol, String> {
+fn get_symbols_group(t: &lexer::Token, iter: &mut Iter, line: usize) -> Result<Symbol, String> {
     if t.kind == lexer::TokenKind::Symbol && t.text == "(" {
         let symbols = get_symbols(iter, line)?;
         if let Some(tt) = iter.next() {
@@ -177,21 +234,8 @@ fn get_symbols_group(
     ))
 }
 
-fn get_symbols_or(
-    t: &lexer::Token,
-    iter: &mut std::slice::Iter<lexer::Token>,
-    line: usize,
-) -> Result<Symbol, String> {
-    Err("".into())
-}
-
-fn get_symbols_count(
-    current_sym: Symbol,
-    iter: &mut std::slice::Iter<lexer::Token>,
-    _line: usize,
-) -> Symbol {
-    let mut iter_cloned = iter.clone();
-    if let Some(next) = iter_cloned.next() {
+fn get_symbols_count(current_sym: Symbol, iter: &mut Iter, _line: usize) -> Symbol {
+    if let Some(next) = iter.lookahead(1) {
         if next.kind == lexer::TokenKind::Symbol {
             match next.text.as_str() {
                 "*" => {
@@ -213,12 +257,9 @@ fn get_symbols_count(
     current_sym
 }
 
-fn get_symbols(
-    iter: &mut std::slice::Iter<lexer::Token>,
-    line: usize,
-) -> Result<Vec<Symbol>, String> {
+fn get_symbols(iter: &mut Iter, line: usize) -> Result<Vec<Symbol>, String> {
     let mut symbols = Vec::new();
-    if let Some(t) = iter.clone().next() {
+    if let Some(t) = iter.lookahead(1) {
         match t.kind {
             lexer::TokenKind::String => {
                 // string so this is a terminal
@@ -240,6 +281,10 @@ fn get_symbols(
                 }
                 ";" => {
                     iter.next();
+                }
+                "|" => {
+                    iter.next();
+                    symbols.push(Symbol::Or(get_symbols(iter, line)?))
                 }
                 ")" => {}
                 "<" => {
@@ -271,7 +316,7 @@ fn get_symbols(
 
 fn get_non_terminal(
     current: &lexer::Token,
-    iter: &mut std::slice::Iter<lexer::Token>,
+    iter: &mut Iter,
     line: usize,
 ) -> Result<Symbol, String> {
     let name;
@@ -342,5 +387,58 @@ mod tests {
         assert!(r.is_ok());
         let r = r.unwrap();
         assert_eq!(r.rules.len(), 1);
+    }
+
+    #[test]
+    fn test_different_cases_one_rule() {
+        let tcs = [
+            (
+                r#"<prog> ::= "if"  <STATEMENT>;"#,
+                Symbol::NonTerminal("prog".into()),
+                vec![
+                    Symbol::Terminal("if".into()),
+                    Symbol::NonTerminal("STATEMENT".into()),
+                ],
+            ),
+            (
+                r#"<p> ::= <1> | (<2> <3>);"#,
+                Symbol::NonTerminal("p".into()),
+                vec![Symbol::Or(vec![
+                    Symbol::NonTerminal("1".into()),
+                    Symbol::Group(vec![
+                        Symbol::NonTerminal("2".into()),
+                        Symbol::NonTerminal("3".into()),
+                    ]),
+                ])],
+            ),
+            (
+                r#"<p> ::= <1> | (<2> | <3>) '+' | <4>;"#,
+                Symbol::NonTerminal("p".into()),
+                vec![Symbol::Or(vec![
+                    Symbol::NonTerminal("1".into()),
+                    Symbol::AtLeastOnce(Box::new(Symbol::Group(vec![Symbol::Or(vec![
+                        Symbol::NonTerminal("2".into()),
+                        Symbol::NonTerminal("3".into()),
+                    ])]))),
+                    Symbol::NonTerminal("4".into()),
+                ])],
+            ),
+        ];
+
+        for t in tcs {
+            println!("Testing {}...", t.0);
+            let r = parse(t.0);
+            if let Err(e) = &r {
+                println!("Error: {}", e);
+            }
+            assert!(r.is_ok());
+            let r = r.unwrap();
+            assert_eq!(r.rules.len(), 1);
+            assert_eq!(r.rules[0].non_terminal, t.1);
+            assert_eq!(r.rules[0].symbols.len(), t.2.len());
+            for (s, exp) in r.rules[0].symbols.iter().zip(t.2) {
+                assert_eq!(*s, exp);
+            }
+        }
     }
 }

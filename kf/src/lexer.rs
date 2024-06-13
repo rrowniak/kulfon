@@ -234,7 +234,7 @@ impl<'a> Tokenizer<'a> {
                             // `_variable` - this is literal
                             // `__` - this is literal (another corner case!)
                             if let Some(cc) = self.get_nth(1) {
-                                if cc.is_ascii_alphanumeric() || cc == '_' {
+                                if (s == "_") && (cc.is_ascii_alphanumeric() || cc == '_') {
                                     // next character is alphanumeric - this is literal case
                                     break;
                                 }
@@ -461,6 +461,31 @@ mod tests {
             assert_eq!(e.len(), 0);
             assert_eq!(t[0].text, code.1);
             assert_eq!(t[0].kind, code.2);
+        }
+    }
+
+    #[test]
+    fn test_token_seq() {
+        let tcs = [
+            ("+variable", vec![(TokenKind::Symbol, "+"), (TokenKind::Literal, "variable")]),
+        ];
+
+        for tc in tcs {
+            println!("Testing {}...", tc.0);
+            let (t, e) = tokenize(&Lang::new(), tc.0);
+            
+            for token in t.iter() {
+                println!("Result: {token}");
+            }
+            for err in e.iter() {
+                println!("Error: {}", err.msg);
+            }
+            assert_eq!(e.len(), 0);
+            assert_eq!(t.len(), tc.1.len());
+            for (t, exp) in t.iter().zip(tc.1) {
+                assert_eq!(t.kind, exp.0);
+                assert_eq!(t.text, exp.1);
+            }
         }
     }
 }
