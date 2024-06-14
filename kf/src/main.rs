@@ -8,6 +8,7 @@
 mod lexer;
 mod lang_def;
 mod bnf_parser;
+mod parse_iter;
 mod parser;
 
 fn main() {

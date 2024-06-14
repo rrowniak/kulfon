@@ -5,69 +5,53 @@
 // Created on: 11.06.2024
 // ---------------------------------------------------
 
-// Backus–Naur form grammar parser
-use crate::lang_def;
-use crate::lexer;
-use core::fmt;
-use std::boxed::Box;
-
 /*
+************** Backus–Naur form grammar parser **************
 * Rules:
 * - non-terminals must be enclosed in brackets <nonterminal>
-* - Terminals must be surrounded in "quotes"
-* - Epsilon (which matches nothing) can be sybolized by a capital E. For example, <very> ::= E | "very" <very> matches zero or more "very"s in a row, such as veryveryvery (though 'zero or more' can be written more easily using the EBNF '*').
-* - Comments: a valid comment start with '//' and ends with a new line
+* - terminals must be surrounded in "quotes"
+* - comments: a valid comment start with '//' and ends with a new line
 
-Simplified BNF grammar for BNF parser
-<symbols> ::= <term> <symbols> | <nterm> <symbols> | <group> <symbols> | <or_case> | E
+To understand the recursive descend parser, a simplified BNF grammar
+for BNF parser is presented below:
+
+<bnf> ::= <nterm_s> "::=" <rhs>
+
+<rhs> ::= <symbol>+ ( "|" <symbol> )* <rhs> | ";"
+<symbol> ::= <term> | <nterm> | <group>
+
 <term> ::= <term_s> <cnt>
 <term_s> ::= "\"" [a-z] "\""
 <nterm> ::= <nterm_s> <cnt>
 <nterm_s> ::= "<" [a-z] ">"
-<group> ::= <group_s> <cnt>
-<group_s> ::= "(" <symbols> ")"
 
-<or_case> ::= <term> "|" <symbols> | <nterm> "|" <symbols> | <group> "|" <symbols>
+<group> ::= <group_s> <cnt>
+<group_s> ::= "(" <rhs> ")"
 
 <cnt> ::= "?" | "*" | "+" | E
 */
 
-pub struct ParseIter<'a, T> {
-    vec: &'a [T],
-    pos_of_next: usize,
-}
+use crate::lang_def;
+use crate::lexer;
+use crate::parse_iter::ParseIter;
+use core::fmt;
+use std::boxed::Box;
 
-impl<'a, T> ParseIter<'a, T> {
-    fn new(vec: &'a [T]) -> Self {
-        Self {
-            vec,
-            pos_of_next: 0,
-        }
-    }
+const TRACE_BNF: bool = true;
 
-    fn lookahead(&self, offset: usize) -> Option<&'a T> {
-        if self.pos_of_next == 0 {
-            // iterator is not started yet
-            return None;
+macro_rules! trace {
+    // This pattern matches when no arguments are provided
+    () => {
+        if TRACE_BNF {
+            println!();
         }
-        if self.pos_of_next + offset - 1 < self.vec.len() {
-            return Some(&self.vec[self.pos_of_next + offset - 1]);
+    };
+    // This pattern matches when there are one or more arguments
+    ($($arg:tt)*) => {
+        if TRACE_BNF {
+            println!("[TRACE] [{}:{}]: {}", file!(), line!(), format!($($arg)*));
         }
-        None
-    }
-}
-
-impl<'a, T> Iterator for ParseIter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.pos_of_next >= self.vec.len() {
-            return None;
-        }
-        let item = &self.vec[self.pos_of_next];
-        self.pos_of_next += 1;
-        Some(item)
-    }
+    };
 }
 
 type Iter<'a> = ParseIter<'a, lexer::Token>;
@@ -157,18 +141,22 @@ pub fn parse(grammar: &str) -> Result<BNF, String> {
     // let mut iter = tokens.iter();
     let mut iter = ParseIter::new(&tokens);
     let mut line = 1;
-    while let Some(t) = iter.next() {
+    iter.next();
+    while let Some(t) = iter.peek() {
         if t.kind == lexer::TokenKind::Comment {
             line += 1;
+            iter.next();
             continue;
         }
         // we're expecting non-terminal here
-        let non_terminal = get_non_terminal(&t, &mut iter, line)?;
+        let non_terminal = get_non_terminal(&mut iter, line)?;
+        trace!("parse: got lhs symbol: {}", non_terminal);
         // we're expecting '::=' symbol now
-        if let Some(t) = iter.next() {
+        if let Some(t) = iter.peek() {
             if t.kind != lexer::TokenKind::Symbol || t.text != "::=" {
                 return Err(err_exp_sym("::=", &t.text, line));
             }
+            iter.next();
         } else {
             return Err(err_eof());
         }
@@ -196,46 +184,60 @@ fn err_eof() -> String {
     "BNF syntax error: unexpected end of program".into()
 }
 
-fn get_symbols_term(t: &lexer::Token, iter: &mut Iter, line: usize) -> Result<Symbol, String> {
-    if t.kind == lexer::TokenKind::String {
-        Ok(get_symbols_count(
-            Symbol::Terminal(t.text.clone()),
-            iter,
-            line,
-        ))
+fn parse_term(iter: &mut Iter, line: usize) -> Result<Symbol, String> {
+    if let Some(t) = iter.peek() {
+        trace!("parse_term starts at {}", t);
+        if t.kind == lexer::TokenKind::String {
+            iter.next();
+            Ok(get_symbols_count(
+                Symbol::Terminal(t.text.clone()),
+                iter,
+                line,
+            ))
+        } else {
+            Err(format!(
+                "BNF syntax error at {} line/rule#: expected terminal, got {}",
+                line, t.text
+            ))
+        }
     } else {
-        Err(format!(
-            "BNF syntax error at {} line/rule#: expected terminal, got {}",
-            line, t.text
-        ))
+        Err(err_eof())
     }
 }
 
-fn get_symbols_nonterm(t: &lexer::Token, iter: &mut Iter, line: usize) -> Result<Symbol, String> {
-    let nonterm = get_non_terminal(t, iter, line)?;
+fn parse_nterm(iter: &mut Iter, line: usize) -> Result<Symbol, String> {
+    trace!("parse_nterm starts");
+    let nonterm = get_non_terminal(iter, line)?;
     Ok(get_symbols_count(nonterm, iter, line))
 }
 
-fn get_symbols_group(t: &lexer::Token, iter: &mut Iter, line: usize) -> Result<Symbol, String> {
-    if t.kind == lexer::TokenKind::Symbol && t.text == "(" {
-        let symbols = get_symbols(iter, line)?;
-        if let Some(tt) = iter.next() {
-            if tt.kind == lexer::TokenKind::Symbol && tt.text == ")" {
-                return Ok(get_symbols_count(Symbol::Group(symbols), iter, line));
+fn parse_group(iter: &mut Iter, line: usize) -> Result<Symbol, String> {
+    if let Some(t) = iter.peek() {
+        trace!("parse_group starts at {}", t);
+        if t.kind == lexer::TokenKind::Symbol && t.text == "(" {
+            iter.next();
+            let symbols = parse_rhs(iter, line)?;
+            if let Some(tt) = iter.peek() {
+                if tt.kind == lexer::TokenKind::Symbol && tt.text == ")" {
+                    iter.next();
+                    return Ok(get_symbols_count(Symbol::Group(symbols), iter, line));
+                }
+                return Err(format!("BNF syntax error at {} line/rule#: parsing group failed - expected closing ')', got: '{}:{}'", line, tt.kind, tt.text));
+            } else {
+                return Err(err_eof());
             }
-            return Err(format!("BNF syntax error at {} line/rule#: parsing group failed - expected closing ')', got: '{}:{}'", line, tt.kind, tt.text));
-        } else {
-            return Err(err_eof());
         }
+        Err(format!(
+            "BNF syntax error at {} line/rule#: expected '(', got '{}:{}",
+            line, t.kind, t.text
+        ))
+    } else {
+        Err(err_eof())
     }
-    Err(format!(
-        "BNF syntax error at {} line/rule#: expected '(', got '{}:{}",
-        line, t.kind, t.text
-    ))
 }
 
 fn get_symbols_count(current_sym: Symbol, iter: &mut Iter, _line: usize) -> Symbol {
-    if let Some(next) = iter.lookahead(1) {
+    if let Some(next) = iter.peek() {
         if next.kind == lexer::TokenKind::Symbol {
             match next.text.as_str() {
                 "*" => {
@@ -257,92 +259,129 @@ fn get_symbols_count(current_sym: Symbol, iter: &mut Iter, _line: usize) -> Symb
     current_sym
 }
 
-fn get_symbols(iter: &mut Iter, line: usize) -> Result<Vec<Symbol>, String> {
-    let mut symbols = Vec::new();
-    if let Some(t) = iter.lookahead(1) {
+fn parse_symbol(iter: &mut Iter, line: usize) -> Result<Symbol, String> {
+    if let Some(t) = iter.peek() {
+        trace!("parse_symbol starts at {}", t);
         match t.kind {
             lexer::TokenKind::String => {
                 // string so this is a terminal
-                iter.next();
-                symbols.push(get_symbols_term(&t, iter, line)?);
-                for s in get_symbols(iter, line)? {
-                    symbols.push(s);
-                }
+                return Ok(parse_term(iter, line)?);
             }
             lexer::TokenKind::Symbol => match t.text.as_str() {
                 "(" => {
-                    iter.next();
-                    // group begins
-                    let nt = get_symbols_group(&t, iter, line)?;
-                    symbols.push(nt);
-                    for s in get_symbols(iter, line)? {
-                        symbols.push(s);
-                    }
+                    return Ok(parse_group(iter, line)?);
                 }
-                ";" => {
-                    iter.next();
-                }
-                "|" => {
-                    iter.next();
-                    symbols.push(Symbol::Or(get_symbols(iter, line)?))
-                }
-                ")" => {}
                 "<" => {
                     // this must be a non-terminal
-                    iter.next();
-                    let nt = get_symbols_nonterm(&t, iter, line)?;
-                    symbols.push(nt);
-                    for s in get_symbols(iter, line)? {
-                        symbols.push(s);
-                    }
+                    return Ok(parse_nterm(iter, line)?);
                 }
                 _ => {
                     return Err(format!(
-                        "BNF syntax error at {} line/rule#: unknown symbol '{}'",
-                        line, t.text
+                        "BNF syntax error at {} line/rule#: expected BNF symbol (terminal, nonterminal or group) but got unexpected token '{}:{}'",
+                        line, t.kind, t.text
                     ));
                 }
             },
             _ => {
                 return Err(format!(
-                    "BNF syntax error at {} line/rule#: unexpected symbol '{}:{}'",
+                    "BNF syntax error at {} line/rule#: expected BNF symbol but got unexpected token '{}:{}'",
                     line, t.kind, t.text
                 ));
             }
         }
     }
+    Err(err_eof())
+}
+
+fn parse_rhs(iter: &mut Iter, line: usize) -> Result<Vec<Symbol>, String> {
+    if let Some(t) = iter.peek() {
+        trace!("parse_rhs starting at: {}", t);
+        if t.kind == lexer::TokenKind::Symbol {
+            if t.text == ";" {
+                return Ok(vec![]);
+            } else if t.text == ")" {
+                return Ok(vec![]);
+            }
+        }
+    } else {
+        return Err(err_eof());
+    }
+    let mut symbols = Vec::new();
+    trace!("parse_rhs: looking for first symbol...");
+    let mut prev_sym = parse_symbol(iter, line)?;
+    trace!("parse_rhs: got first symbol: {}", prev_sym);
+    while let Some(t) = iter.peek() {
+        trace!("parse_rhs: current symbol: {}", t);
+        if t.kind == lexer::TokenKind::Symbol {
+            match t.text.as_str() {
+                ";" => {
+                    break;
+                }
+                "|" => {
+                    iter.next();
+                    prev_sym = Symbol::Or(vec![prev_sym, parse_symbol(iter, line)?]);
+                    continue;
+                }
+                ")" => {
+                    break;
+                }
+                _ => {}
+            }
+        }
+        symbols.push(prev_sym);
+        trace!("parse_rhs: looking for next symbol...");
+        prev_sym = parse_symbol(iter, line)?;
+        trace!("parse_rhs: got next symbol: {}", prev_sym);
+    }
+    symbols.push(prev_sym);
+    trace!("parse_rhs: parsing last symbols...");
+    symbols.append(&mut parse_rhs(iter, line)?);
+    trace!("parse_rhs: parsing last symbols done");
     Ok(symbols)
 }
 
-fn get_non_terminal(
-    current: &lexer::Token,
-    iter: &mut Iter,
-    line: usize,
-) -> Result<Symbol, String> {
-    let name;
-    if current.text != "<" {
-        return Err(err_exp_sym("<", &current.text, line));
+fn get_symbols(iter: &mut Iter, line: usize) -> Result<Vec<Symbol>, String> {
+    let syms = parse_rhs(iter, line)?;
+    // expecting ';'
+    if let Some(t) = iter.peek() {
+        if t.text == ";" {
+            iter.next();
+        }
     }
-    if let Some(t) = iter.next() {
-        if t.kind != lexer::TokenKind::Literal {
-            return Err(format!(
+    Ok(syms)
+}
+
+fn get_non_terminal(iter: &mut Iter, line: usize) -> Result<Symbol, String> {
+    if let Some(current) = iter.peek() {
+        trace!("get_non_terminal: started at {}", current);
+        let name;
+        if current.text != "<" {
+            return Err(err_exp_sym("<", &current.text, line));
+        }
+        if let Some(t) = iter.next() {
+            if t.kind != lexer::TokenKind::Literal {
+                return Err(format!(
                 "BNF syntax error at {} line/rule#: expected non-terminal name (literal), got {} ({})",
                 line, t.text, t.kind
             ));
+            } else {
+                name = t.text.clone();
+            }
         } else {
-            name = t.text.clone();
+            return Err(err_eof());
         }
-    } else {
-        return Err(err_eof());
-    }
-    if let Some(t) = iter.next() {
-        if t.text != ">" {
-            return Err(err_exp_sym(">", &t.text, line));
+        if let Some(t) = iter.next() {
+            if t.text != ">" {
+                return Err(err_exp_sym(">", &t.text, line));
+            }
+            iter.next();
+        } else {
+            return Err(err_eof());
         }
+        Ok(Symbol::NonTerminal(name))
     } else {
-        return Err(err_eof());
+        Err(err_eof())
     }
-    Ok(Symbol::NonTerminal(name))
 }
 
 #[cfg(test)]
@@ -412,14 +451,16 @@ mod tests {
                 ])],
             ),
             (
-                r#"<p> ::= <1> | (<2> | <3>) '+' | <4>;"#,
+                r#"<p> ::= <1> | (<2> | <3>)+ | <4>;"#,
                 Symbol::NonTerminal("p".into()),
                 vec![Symbol::Or(vec![
-                    Symbol::NonTerminal("1".into()),
-                    Symbol::AtLeastOnce(Box::new(Symbol::Group(vec![Symbol::Or(vec![
-                        Symbol::NonTerminal("2".into()),
-                        Symbol::NonTerminal("3".into()),
-                    ])]))),
+                    Symbol::Or(vec![
+                        Symbol::NonTerminal("1".into()),
+                        Symbol::AtLeastOnce(Box::new(Symbol::Group(vec![Symbol::Or(vec![
+                            Symbol::NonTerminal("2".into()),
+                            Symbol::NonTerminal("3".into()),
+                        ])]))),
+                    ]),
                     Symbol::NonTerminal("4".into()),
                 ])],
             ),
@@ -434,6 +475,11 @@ mod tests {
             assert!(r.is_ok());
             let r = r.unwrap();
             assert_eq!(r.rules.len(), 1);
+
+            for s in &r.rules[0].symbols {
+                println!("Symbols: {}", s);
+            }
+
             assert_eq!(r.rules[0].non_terminal, t.1);
             assert_eq!(r.rules[0].symbols.len(), t.2.len());
             for (s, exp) in r.rules[0].symbols.iter().zip(t.2) {
