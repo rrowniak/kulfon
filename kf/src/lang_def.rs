@@ -38,6 +38,55 @@ const KULFON_SPEC_SYMBOLS: &[&str] = &[
     "#!", "#[", "]", "!", "?"
 ];
 
+#[derive(Debug, PartialEq)]
+pub enum KfTokKind {
+    // keywords
+    KwIf,
+    KwElse,
+    KwFn,
+    KwPub,
+    // symbols
+    SymCurlyOpen,
+    SymCurlyClose,
+    SymParenthOpen,
+    SymParenthClose,
+    SymSemi,
+    SymArrow,
+    // Literals
+    LitString,
+    LitChar,
+    LitInt,
+    LitFloat,
+    Literal,
+    Comment,
+}
+
+impl KfTokKind {
+    pub fn from(s: &str) -> Option<KfTokKind> {
+        let t = match s {
+            "if" => KfTokKind::KwIf,
+            "else" => KfTokKind::KwElse,
+            "fn" => KfTokKind::KwFn,
+            "pub" => KfTokKind::KwPub,
+            "{" => KfTokKind::SymCurlyOpen,
+            "}" => KfTokKind::SymCurlyClose,
+            "(" => KfTokKind::SymParenthOpen,
+            ")" => KfTokKind::SymParenthClose,
+            ";" => KfTokKind::SymSemi,
+            "->" => KfTokKind::SymArrow,
+            _ => return None,
+        };
+        Some(t)
+    }
+}
+
+#[derive(Debug)]
+pub struct KfToken {
+    pub kind: KfTokKind,
+    pub text: String,
+    pub at: TextPoint,
+}
+
 #[derive(Clone)]
 pub struct Range {
     pub start: String,
@@ -126,7 +175,7 @@ impl Lang {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct TextPoint {
     pub line: usize,
     pub col: usize,
