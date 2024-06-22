@@ -127,14 +127,208 @@ impl<'a> KfParser<'a> {
         let args = self.parse_arg_list()?;
         self.consume_tok(KfTokKind::SymParenthClose)?;
         // return value specified?
-        let type = if self.check_this_tok(KfTokKind::SymArrow) {
+        let ret_type: Option<ast::TypeDecl> = if self.check_current_tok(KfTokKind::SymArrow) {
             self.consume_tok(KfTokKind::SymArrow)?;
-            self.parse_type()
+            Some(self.parse_type()?)
         } else {
-                None
-            };
+            None
+        };
         self.parse_scope()?;
         Err(Vec::new())
+    }
+
+    fn parse_arg_list(&mut self) -> ParsingResult<Vec<ast::VarDecl>> {
+        Ok(Vec::new())
+    }
+
+    fn parse_type(&mut self) -> ParsingResult<ast::TypeDecl> {
+        let typename = self.consume_name_literal()?;
+        Ok(ast::TypeDecl { typename })
+    }
+
+    fn parse_scope(&mut self) -> ParsingResult<ast::Scope> {
+        self.consume_tok(KfTokKind::SymCurlyOpen)?;
+        let mut scope = ast::Scope { exprs: Vec::new() };
+        while !self.check_current_tok(KfTokKind::SymCurlyClose) {
+            scope.exprs.push(self.parse_expression()?);
+        }
+        self.consume_tok(KfTokKind::SymCurlyClose)?;
+        Ok(scope)
+    }
+
+    fn parse_expression(&mut self) -> ParsingResult<ast::Expression> {
+        Ok(self.parse_equality()?)
+    }
+
+    fn parse_equality(&mut self) -> ParsingResult<ast::Expression> {
+        let mut expr = self.parse_comparison()?;
+        loop {
+            if self.match_current_tok(KfTokKind::OpEq) {
+                let right = self.parse_comparison()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Eq(Box::new(expr), Box::new(right)),
+                };
+                continue;
+            } else if self.match_current_tok(KfTokKind::OpNe) {
+                let right = self.parse_comparison()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Neq(Box::new(expr), Box::new(right)),
+                };
+                continue;
+            }
+            break;
+        }
+        Ok(expr)
+    }
+
+    fn parse_comparison(&mut self) -> ParsingResult<ast::Expression> {
+        let mut expr = self.parse_term()?;
+        loop {
+            if self.match_current_tok(KfTokKind::OpGt) {
+                let right = self.parse_term()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Gt(Box::new(expr), Box::new(right)),
+                };
+            } else if self.match_current_tok(KfTokKind::OpGe) {
+                let right = self.parse_term()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Ge(Box::new(expr), Box::new(right)),
+                };
+            } else if self.match_current_tok(KfTokKind::OpLt) {
+                let right = self.parse_term()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Lt(Box::new(expr), Box::new(right)),
+                };
+            } else if self.match_current_tok(KfTokKind::OpLe) {
+                let right = self.parse_term()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Le(Box::new(expr), Box::new(right)),
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn parse_term(&mut self) -> ParsingResult<ast::Expression> {
+        let mut expr = self.parse_factor()?;
+        loop {
+            if self.match_current_tok(KfTokKind::OpPlus) {
+                let right = self.parse_factor()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Plus(Box::new(expr), Box::new(right)),
+                };
+            } else if self.match_current_tok(KfTokKind::OpMinus) {
+                let right = self.parse_factor()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Minus(Box::new(expr), Box::new(right)),
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn parse_factor(&mut self) -> ParsingResult<ast::Expression> {
+        let mut expr = self.parse_unary()?;
+        loop {
+            if self.match_current_tok(KfTokKind::OpSlash) {
+                let right = self.parse_unary()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Slash(Box::new(expr), Box::new(right)),
+                };
+            } else if self.match_current_tok(KfTokKind::OpStar) {
+                let right = self.parse_unary()?;
+                expr = ast::Expression {
+                    expr: ast::ExprNode::Star(Box::new(expr), Box::new(right)),
+                };
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn parse_unary(&mut self) -> ParsingResult<ast::Expression> {
+        if self.match_current_tok(KfTokKind::OpBang) {
+            let expr = self.parse_unary()?;
+            return Ok(ast::Expression {
+                expr: ast::ExprNode::Bang(Box::new(expr)),
+            });
+        } else if self.match_current_tok(KfTokKind::OpMinus) {
+            let expr = self.parse_unary()?;
+            return Ok(ast::Expression {
+                expr: ast::ExprNode::UMinus(Box::new(expr)),
+            });
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> ParsingResult<ast::Expression> {
+        let t = match self.iter.peek() {
+            Some(t) => t,
+            None => return Err(error_eof()),
+        };
+
+        if self.match_current_tok(KfTokKind::SlTrue) {
+            return Ok(ast::Expression {
+                expr: ast::ExprNode::True,
+            });
+        } else if self.match_current_tok(KfTokKind::SlFalse) {
+            return Ok(ast::Expression {
+                expr: ast::ExprNode::False,
+            });
+        } else if self.check_tok_sequence(&[KfTokKind::Literal, KfTokKind::SymParenthOpen]) {
+            // this is a function call
+            return self.parse_fn_call();
+        } else if self.match_current_tok(KfTokKind::LitChar) {
+            return Ok(ast::Expression {
+                expr: ast::ExprNode::Char(t.text.clone()),
+            });
+        } else if self.match_current_tok(KfTokKind::LitString) {
+            return Ok(ast::Expression {
+                expr: ast::ExprNode::String(t.text.clone()),
+            });
+        } else if self.match_current_tok(KfTokKind::Literal) {
+            return Ok(ast::Expression {
+                expr: ast::ExprNode::Literal(t.text.clone()),
+            });
+        } else if self.match_current_tok(KfTokKind::SymParenthOpen) {
+            let expr = self.parse_expression()?;
+            self.consume_tok(KfTokKind::SymParenthClose);
+            return Ok(expr);
+        }
+
+        Err(error_from_token(
+            t,
+            "Unexpected token while parsing expression",
+        ))
+    }
+
+    fn parse_fn_call(&mut self) -> ParsingResult<ast::Expression> {
+        let fn_name = self.consume_name_literal()?;
+        self.consume_tok(KfTokKind::SymParenthOpen)?;
+        let args = self.parse_expr_list()?;
+        self.consume_tok(KfTokKind::SymParenthClose)?;
+        return Ok(ast::Expression {
+            expr: ast::ExprNode::FnCall(fn_name, args),
+        });
+    }
+
+    fn parse_expr_list(&mut self) -> ParsingResult<Vec<ast::Expression>> {
+        let mut ret = Vec::new();
+        // expression list can be empty
+        while !self.check_current_tok(KfTokKind::SymParenthClose) {
+            ret.push(self.parse_expression()?);
+            if self.check_current_tok(KfTokKind::SymComma) {
+                self.consume_tok(KfTokKind::SymComma)?;
+            } else {
+                // TODO: unexpected token
+            }
+        }
+        Ok(ret)
     }
 
     fn consume_tok(&mut self, kind: KfTokKind) -> ParsingResult<()> {
@@ -151,13 +345,37 @@ impl<'a> KfParser<'a> {
             None => return Err(error_eof()),
         }
     }
+    /// Check if the current token is equal to `kind`
+    /// If so, consume it and return true
+    fn match_current_tok(&mut self, kind: KfTokKind) -> bool {
+        if self.check_current_tok(kind) {
+            self.iter.next();
+            return true;
+        }
+        return false;
+    }
 
-    fn check_this_tok(&self, kind: KfTokKind) -> bool {
+    /// Check if the current token is equal to `kind`
+    fn check_current_tok(&self, kind: KfTokKind) -> bool {
         let t = self.iter.peek();
         if t.is_some() && t.unwrap().kind == kind {
             return true;
         }
         return false;
+    }
+
+    fn check_tok_sequence(&self, kinds: &[KfTokKind]) -> bool {
+        for (i, kind) in kinds.iter().enumerate() {
+            let t = self.iter.lookahead(i);
+            if !t.is_some() {
+                return false;
+            }
+            let t = t.unwrap();
+            if kind != &t.kind {
+                return false;
+            }
+        }
+        true
     }
 
     fn consume_name_literal(&mut self) -> ParsingResult<String> {
@@ -167,7 +385,7 @@ impl<'a> KfParser<'a> {
                 if t.kind == KfTokKind::Literal {
                     return Ok(t.text.clone());
                 } else {
-                    let msg = format!("Expected function name, got {:?}", t);
+                    let msg = format!("Expected literal, got {:?}", t);
                     return Err(error_from_token(t, &msg));
                 }
             }

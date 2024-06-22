@@ -27,4 +27,34 @@ pub struct VarDecl {
 }
 
 #[derive(Debug)]
-pub struct Scope {}
+pub struct Scope {
+    pub exprs: Vec<Expression>,
+}
+
+#[derive(Debug)]
+pub struct Expression {
+    pub expr: ExprNode,
+}
+
+#[derive(Debug)]
+pub enum ExprNode {
+    Eq(Box<Expression>, Box<Expression>),
+    Neq(Box<Expression>, Box<Expression>),
+    Gt(Box<Expression>, Box<Expression>),
+    Ge(Box<Expression>, Box<Expression>),
+    Lt(Box<Expression>, Box<Expression>),
+    Le(Box<Expression>, Box<Expression>),
+    Plus(Box<Expression>, Box<Expression>),
+    Minus(Box<Expression>, Box<Expression>),
+    Slash(Box<Expression>, Box<Expression>),
+    Star(Box<Expression>, Box<Expression>),
+    Bang(Box<Expression>),
+    UMinus(Box<Expression>), // unary minus
+    
+    FnCall(String, Vec<Expression>),
+    String(String),
+    Literal(String),
+    Char(String),
+    True,
+    False,
+}

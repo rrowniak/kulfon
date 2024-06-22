@@ -45,6 +45,9 @@ pub enum KfTokKind {
     KwElse,
     KwFn,
     KwPub,
+    // special literals
+    SlTrue,
+    SlFalse,
     // symbols
     SymCurlyOpen,
     SymCurlyClose,
@@ -52,7 +55,21 @@ pub enum KfTokKind {
     SymParenthClose,
     SymSemi,
     SymArrow,
-    // Literals
+    SymDot,
+    SymComma,
+    // operators
+    OpEq,
+    OpNe,
+    OpGt,
+    OpGe,
+    OpLt,
+    OpLe,
+    OpPlus,
+    OpMinus,
+    OpSlash,
+    OpStar,
+    OpBang,
+    // literals
     LitString,
     LitChar,
     LitInt,
