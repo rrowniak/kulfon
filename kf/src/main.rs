@@ -7,7 +7,7 @@
 
 mod lexer;
 mod lang_def;
-mod bnf_parser;
+// mod bnf_parser;
 mod parse_iter;
 mod parser;
 mod ast;
@@ -15,6 +15,6 @@ mod ast;
 fn main() {
     let kulfon_lang = lang_def::Lang::new();
     lexer::tokenize(&kulfon_lang, "");
-    _ = bnf_parser::parse("");
+    // _ = bnf_parser::parse("");
     _ = parser::parse("");
 }

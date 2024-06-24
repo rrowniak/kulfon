@@ -22,21 +22,54 @@ const RUST_KEYWORDS: &[&str] = &[
 ];
 #[rustfmt::skip]
 const KULFON_KEYWORDS: &[&str] = &[
-    "if", "else", "loop", "for", "while",
-    "fn"
+    KF_IF, KF_ELSE, KF_FN, KF_PUB,
+    "loop", "for", "while",
 ];
 const KULFON_RES_KEYWORDS: &[&str] = RUST_KEYWORDS;
 #[rustfmt::skip]
 const KULFON_SPEC_SYMBOLS: &[&str] = &[
+    KF_CURLY_OPEN, KF_CURLY_CLOSE, KF_PARENTH_OPEN, KF_PARENTH_CLOSE, KF_SEMI, KF_ARROW,
+    KF_DOT, KF_COMMA, KF_EQ, KF_NE, KF_GT, KF_GE, KF_LT, KF_LE, KF_MINUS, KF_PLUS, KF_SLASH,
+    KF_STAR, KF_BANG,
     // Single-character symbols
-    "{", "}", "(", ")", "[", "]", "<", ">", "+", "-", "*", "/", "%", "^", "!", "&", "|", "~", "=",
+    "[", "]", "%", "^", "&", "|", "~", "=",
     "@", "#", "$", "?", ";", ":", ",", ".", "'", "\"", "_",
     // Multi-character operators and symbols
-    "->", "=>", "::", "..", "...", "..=", "==", "!=", ">=", "<=", "&&", "||", "<<", ">>", "+=", 
+    "=>", "::", "..", "...", "..=", "&&", "||", "<<", ">>", "+=", 
     "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--", 
     // Attribute and macro-related
-    "#!", "#[", "]", "!", "?"
+    "#!", "#[", "]", "?"
 ];
+
+// kulfon keywords
+const KF_IF: &str = "if";
+const KF_ELSE: &str = "else";
+const KF_FN: &str = "fn";
+const KF_PUB: &str = "pub";
+// kulfon special literals
+const KF_TRUE: &str = "true";
+const KF_FALSE: &str = "false";
+// kulfon symbols
+const KF_CURLY_OPEN: &str = "{";
+const KF_CURLY_CLOSE: &str = "}";
+const KF_PARENTH_OPEN: &str = "(";
+const KF_PARENTH_CLOSE: &str = ")";
+const KF_SEMI: &str = ";";
+const KF_ARROW: &str = "->";
+const KF_DOT: &str = ".";
+const KF_COMMA: &str = ",";
+// operators
+const KF_EQ: &str = "==";
+const KF_NE: &str = "!=";
+const KF_GT: &str = ">";
+const KF_GE: &str = ">=";
+const KF_LT: &str = "<";
+const KF_LE: &str = "<=";
+const KF_PLUS: &str = "+";
+const KF_MINUS: &str = "-";
+const KF_SLASH: &str = "/";
+const KF_STAR: &str = "*";
+const KF_BANG: &str = "!";
 
 #[derive(Debug, PartialEq)]
 pub enum KfTokKind {
@@ -81,16 +114,31 @@ pub enum KfTokKind {
 impl KfTokKind {
     pub fn from(s: &str) -> Option<KfTokKind> {
         let t = match s {
-            "if" => KfTokKind::KwIf,
-            "else" => KfTokKind::KwElse,
-            "fn" => KfTokKind::KwFn,
-            "pub" => KfTokKind::KwPub,
-            "{" => KfTokKind::SymCurlyOpen,
-            "}" => KfTokKind::SymCurlyClose,
-            "(" => KfTokKind::SymParenthOpen,
-            ")" => KfTokKind::SymParenthClose,
-            ";" => KfTokKind::SymSemi,
-            "->" => KfTokKind::SymArrow,
+            KF_IF => KfTokKind::KwIf,
+            KF_ELSE => KfTokKind::KwElse,
+            KF_FN => KfTokKind::KwFn,
+            KF_PUB => KfTokKind::KwPub,
+            KF_TRUE => KfTokKind::SlTrue,
+            KF_FALSE => KfTokKind::SlFalse,
+            KF_CURLY_OPEN => KfTokKind::SymCurlyOpen,
+            KF_CURLY_CLOSE => KfTokKind::SymCurlyClose,
+            KF_PARENTH_OPEN => KfTokKind::SymParenthOpen,
+            KF_PARENTH_CLOSE => KfTokKind::SymParenthClose,
+            KF_SEMI => KfTokKind::SymSemi,
+            KF_ARROW => KfTokKind::SymArrow,
+            KF_DOT => KfTokKind::SymDot,
+            KF_COMMA => KfTokKind::SymComma,
+            KF_EQ => KfTokKind::OpEq,
+            KF_NE => KfTokKind::OpNe,
+            KF_GT => KfTokKind::OpGt,
+            KF_GE => KfTokKind::OpGe,
+            KF_LT => KfTokKind::OpLt,
+            KF_LE => KfTokKind::OpLe,
+            KF_PLUS => KfTokKind::OpPlus,
+            KF_MINUS => KfTokKind::OpMinus,
+            KF_SLASH => KfTokKind::OpSlash,
+            KF_STAR => KfTokKind::OpStar,
+            KF_BANG => KfTokKind::OpBang,
             _ => return None,
         };
         Some(t)

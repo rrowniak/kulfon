@@ -10,18 +10,12 @@ use crate::lang_def::{KfTokKind, KfToken, Lang, ParsingError};
 use crate::lexer;
 use crate::parse_iter::ParseIter;
 
-const BNF_GRAMMAR: &str = r#"
-<program> ::= <fun_def>;
-<fun_def> ::= "fn" <FUN_IDENTIFIER> "(" <fn_args> ")" <fn_ret> "{" <fn_body> "}";
-
-"#;
-
 type ParsingErrs = Vec<ParsingError>;
 type ParsingResult<T> = Result<T, ParsingErrs>;
 
 fn convert_tok_to_kftok(tokens: Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErrs) {
     let mut kftokens = Vec::new();
-    let mut errors = Vec::new();
+    let errors = Vec::new();
 
     for t in tokens {
         let new_kind = match t.kind {
@@ -57,7 +51,8 @@ fn throw_errors(errs: ParsingErrs) -> Result<(), String> {
     } else {
         let mut error = String::new();
         for e in errs {
-            error.push_str(&e.msg);
+            let msg = format!("Syntax error at {}, {}: {}", e.at.line, e.at.col, e.msg);
+            error.push_str(&msg);
             error += "\n";
         }
         Err(error)
@@ -122,19 +117,26 @@ impl<'a> KfParser<'a> {
 
     fn parse_fun(&mut self) -> ParsingResult<ast::Fun> {
         self.consume_tok(KfTokKind::KwFn)?;
-        let fn_name = self.consume_name_literal()?;
+        let name = self.consume_name_literal()?;
         self.consume_tok(KfTokKind::SymParenthOpen)?;
         let args = self.parse_arg_list()?;
         self.consume_tok(KfTokKind::SymParenthClose)?;
         // return value specified?
-        let ret_type: Option<ast::TypeDecl> = if self.check_current_tok(KfTokKind::SymArrow) {
+        let ret = if self.check_current_tok(KfTokKind::SymArrow) {
             self.consume_tok(KfTokKind::SymArrow)?;
-            Some(self.parse_type()?)
+            self.parse_type()?
         } else {
-            None
+            ast::TypeDecl {
+                typename: String::new(),
+            }
         };
-        self.parse_scope()?;
-        Err(Vec::new())
+        let body = self.parse_scope()?;
+        Ok(ast::Fun {
+            name,
+            args,
+            ret,
+            body,
+        })
     }
 
     fn parse_arg_list(&mut self) -> ParsingResult<Vec<ast::VarDecl>> {
@@ -151,6 +153,7 @@ impl<'a> KfParser<'a> {
         let mut scope = ast::Scope { exprs: Vec::new() };
         while !self.check_current_tok(KfTokKind::SymCurlyClose) {
             scope.exprs.push(self.parse_expression()?);
+            self.consume_tok(KfTokKind::SymSemi)?;
         }
         self.consume_tok(KfTokKind::SymCurlyClose)?;
         Ok(scope)
@@ -297,7 +300,7 @@ impl<'a> KfParser<'a> {
             });
         } else if self.match_current_tok(KfTokKind::SymParenthOpen) {
             let expr = self.parse_expression()?;
-            self.consume_tok(KfTokKind::SymParenthClose);
+            self.consume_tok(KfTokKind::SymParenthClose)?;
             return Ok(expr);
         }
 
@@ -331,11 +334,15 @@ impl<'a> KfParser<'a> {
         Ok(ret)
     }
 
+    /// Moves current token to the next position only if
+    /// current token matches provided `kind`. Otherwise
+    /// an error is reported.
     fn consume_tok(&mut self, kind: KfTokKind) -> ParsingResult<()> {
-        let t = self.iter.next();
+        let t = self.iter.peek();
         match t {
             Some(t) => {
                 if t.kind == kind {
+                    self.iter.next();
                     return Ok(());
                 } else {
                     let msg = format!("Expected {:?}, got {:?}", kind, t);
@@ -346,7 +353,8 @@ impl<'a> KfParser<'a> {
         }
     }
     /// Check if the current token is equal to `kind`
-    /// If so, consume it and return true
+    /// If so, consume it and return true.
+    /// Otherwise return false.
     fn match_current_tok(&mut self, kind: KfTokKind) -> bool {
         if self.check_current_tok(kind) {
             self.iter.next();
@@ -378,11 +386,16 @@ impl<'a> KfParser<'a> {
         true
     }
 
+    /// Returns `text` of current token and moves
+    /// iterator to the next position only if
+    /// current token is literal.
+    /// Otherwise an error is reported.
     fn consume_name_literal(&mut self) -> ParsingResult<String> {
-        let t = self.iter.next();
+        let t = self.iter.peek();
         match t {
             Some(t) => {
                 if t.kind == KfTokKind::Literal {
+                    self.iter.next();
                     return Ok(t.text.clone());
                 } else {
                     let msg = format!("Expected literal, got {:?}", t);
@@ -396,7 +409,7 @@ impl<'a> KfParser<'a> {
 
 fn error_from_token(t: &KfToken, msg: &str) -> ParsingErrs {
     vec![ParsingError {
-        msg: msg.into(),
+        msg: format!("{} ({:?})", msg, t),
         details: String::new(),
         at: t.at,
     }]
@@ -423,6 +436,15 @@ mod tests {
         }
         "#;
         let result = parse(kulfon_code);
-        assert!(result.is_ok());
+        match result {
+            Ok(r) => {
+                println!("{:?}", r);
+                // assert!(false);
+            }
+            Err(e) => {
+                println!("{:?}", e);
+                assert!(false);
+            }
+        }
     }
 }
