@@ -1,3 +1,9 @@
+// ===================================================
+// This file is part of the Kulfon compiler.
+// Author: Rafał Równiak
+// License: Read LICENSE file
+// Created on: 21.06.2024
+// ---------------------------------------------------
 pub struct ParseIter<'a, T> {
     vec: &'a [T],
     pos_of_next: usize,

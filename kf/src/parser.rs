@@ -4,7 +4,6 @@
 // License: Read LICENSE file
 // Created on: 15.06.2024
 // ---------------------------------------------------
-// use crate::bnf_parser;
 use crate::ast;
 use crate::lang_def::{KfTokKind, KfToken, Lang, ParsingError};
 use crate::lexer;
@@ -13,7 +12,7 @@ use crate::parse_iter::ParseIter;
 type ParsingErrs = Vec<ParsingError>;
 type ParsingResult<T> = Result<T, ParsingErrs>;
 
-fn convert_tok_to_kftok(tokens: Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErrs) {
+fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErrs) {
     let mut kftokens = Vec::new();
     let errors = Vec::new();
 
@@ -37,7 +36,7 @@ fn convert_tok_to_kftok(tokens: Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErrs
         };
         kftokens.push(KfToken {
             kind: new_kind,
-            text: t.text,
+            text: t.text.clone(),
             at: t.start,
         });
     }
@@ -45,37 +44,13 @@ fn convert_tok_to_kftok(tokens: Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErrs
     (kftokens, errors)
 }
 
-fn throw_errors(errs: ParsingErrs) -> Result<(), String> {
-    if errs.len() == 0 {
-        Ok(())
-    } else {
-        let mut error = String::new();
-        for e in errs {
-            let msg = format!("Syntax error at {}, {}: {}", e.at.line, e.at.col, e.msg);
-            error.push_str(&msg);
-            error += "\n";
-        }
-        Err(error)
-    }
-}
-
-pub fn parse(code: &str) -> Result<(), String> {
-    // let bnf = bnf_parser::parse(BNF_GRAMMAR)?;
-    // tokenize code
-    let (tokens, errors) = lexer::tokenize(&Lang::new(), code);
-    throw_errors(errors)?;
+pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::GlobScope> {
     let (tokens, errors) = convert_tok_to_kftok(tokens);
-    throw_errors(errors)?;
+    if errors.len() > 0 {
+        return Err(errors);
+    }
     let mut kfparser = KfParser::new(&tokens);
-    let ast = match kfparser.parse_prog() {
-        Ok(ast) => ast,
-        Err(errs) => {
-            throw_errors(errs)?;
-            panic!("That place should be unreachable.")
-        }
-    };
-    println!("Ast: {:?}", ast);
-    Ok(())
+    kfparser.parse_prog()
 }
 
 struct KfParser<'a> {
@@ -398,7 +373,7 @@ impl<'a> KfParser<'a> {
                     self.iter.next();
                     return Ok(t.text.clone());
                 } else {
-                    let msg = format!("Expected literal, got {:?}", t);
+                    let msg = format!("Expected literal, got {:?}", t.kind);
                     return Err(error_from_token(t, &msg));
                 }
             }
@@ -409,8 +384,8 @@ impl<'a> KfParser<'a> {
 
 fn error_from_token(t: &KfToken, msg: &str) -> ParsingErrs {
     vec![ParsingError {
-        msg: format!("{} ({:?})", msg, t),
-        details: String::new(),
+        msg: format!("{}", msg),
+        details: format!("Token {:?}", t),
         at: t.at,
     }]
 }
@@ -428,6 +403,39 @@ fn error_eof() -> ParsingErrs {
 mod tests {
     use super::*;
 
+    fn throw_errors(errs: ParsingErrs) -> Result<(), String> {
+        if errs.len() == 0 {
+            Ok(())
+        } else {
+            let mut error = String::new();
+            for e in errs {
+                let msg = format!("Syntax error at {}, {}: {}", e.at.line, e.at.col, e.msg);
+                error.push_str(&msg);
+                error += "\n";
+            }
+            Err(error)
+        }
+    }
+
+    fn parse_code(code: &str) -> Result<(), String> {
+        // let bnf = bnf_parser::parse(BNF_GRAMMAR)?;
+        // tokenize code
+        let (tokens, errors) = lexer::tokenize(&Lang::new(), code);
+        throw_errors(errors)?;
+        let (tokens, errors) = convert_tok_to_kftok(&tokens);
+        throw_errors(errors)?;
+        let mut kfparser = KfParser::new(&tokens);
+        let ast = match kfparser.parse_prog() {
+            Ok(ast) => ast,
+            Err(errs) => {
+                throw_errors(errs)?;
+                panic!("That place should be unreachable.")
+            }
+        };
+        println!("Ast: {:?}", ast);
+        Ok(())
+    }
+
     #[test]
     fn test_hello_word() {
         let kulfon_code = r#"
@@ -435,12 +443,9 @@ mod tests {
             println("hello word");
         }
         "#;
-        let result = parse(kulfon_code);
+        let result = parse_code(kulfon_code);
         match result {
-            Ok(r) => {
-                println!("{:?}", r);
-                // assert!(false);
-            }
+            Ok(_) => {}
             Err(e) => {
                 println!("{:?}", e);
                 assert!(false);

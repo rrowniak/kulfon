@@ -79,7 +79,7 @@ impl<'a> Tokenizer<'a> {
         Tokenizer {
             lang,
             code,
-            curr_point: TextPoint { line: 0, col: 0 },
+            curr_point: TextPoint { line: 1, col: 1 },
             skip_n: 0,
             pos: 0,
             iter: code.char_indices(),
@@ -90,7 +90,7 @@ impl<'a> Tokenizer<'a> {
 
     fn update_prev_c(&mut self) {
         if self.prev_c == '\n' {
-            self.curr_point.col = 0;
+            self.curr_point.col = 1;
             self.curr_point.line += 1;
         } else {
             self.curr_point.col += 1;
@@ -124,7 +124,7 @@ impl<'a> Tokenizer<'a> {
         let mut tokens: Vec<Token> = Vec::new();
         let mut errors: Vec<ParsingError> = Vec::new();
 
-        let mut start_point = TextPoint { line: 0, col: 0 };
+        let mut start_point = TextPoint { line: 1, col: 1 };
         let mut start_pos = 0;
         let mut status = TokenizeState::Idle;
 
