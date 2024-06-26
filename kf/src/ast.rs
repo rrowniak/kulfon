@@ -1,12 +1,11 @@
-#[derive(Debug)]
-pub struct GlobScope {
-    pub imports: Vec<Import>,
-    pub fns: Vec<Fun>,
-}
+// ===================================================
+// This file is part of the Kulfon compiler.
+// Author: Rafał Równiak
+// License: Read LICENSE file
+// Created on: 15.06.2024
+// ---------------------------------------------------
 
-#[derive(Debug)]
-pub struct Import {}
-
+// In this design everything is an expression, even statements
 #[derive(Debug)]
 pub struct Fun {
     pub name: String,
@@ -50,7 +49,9 @@ pub enum ExprNode {
     Star(Box<Expression>, Box<Expression>),
     Bang(Box<Expression>),
     UMinus(Box<Expression>), // unary minus
-    
+
+    GlobScope(Vec<Expression>),
+    FnDef(Fun),
     FnCall(String, Vec<Expression>),
     String(String),
     Literal(String),

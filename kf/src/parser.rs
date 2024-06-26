@@ -5,7 +5,7 @@
 // Created on: 15.06.2024
 // ---------------------------------------------------
 use crate::ast;
-use crate::lang_def::{KfTokKind, KfToken, Lang, ParsingError};
+use crate::lang_def::{KfTokKind, KfToken, ParsingError};
 use crate::lexer;
 use crate::parse_iter::ParseIter;
 
@@ -44,7 +44,7 @@ fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErr
     (kftokens, errors)
 }
 
-pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::GlobScope> {
+pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::Expression> {
     let (tokens, errors) = convert_tok_to_kftok(tokens);
     if errors.len() > 0 {
         return Err(errors);
@@ -64,12 +64,9 @@ impl<'a> KfParser<'a> {
         }
     }
 
-    fn parse_prog(&mut self) -> ParsingResult<ast::GlobScope> {
+    fn parse_prog(&mut self) -> ParsingResult<ast::Expression> {
         self.iter.next();
-        let mut global_scope = ast::GlobScope {
-            imports: Vec::new(),
-            fns: Vec::new(),
-        };
+        let mut global_scope = Vec::new();
         loop {
             let t = self.iter.peek();
             if t.is_none() {
@@ -79,7 +76,7 @@ impl<'a> KfParser<'a> {
             match t.kind {
                 KfTokKind::KwFn => {
                     // function declaration
-                    global_scope.fns.push(self.parse_fun()?);
+                    global_scope.push(self.parse_fun()?);
                 }
                 _ => {
                     // error: unexpected symbol
@@ -87,10 +84,12 @@ impl<'a> KfParser<'a> {
                 }
             }
         }
-        Ok(global_scope)
+        Ok(ast::Expression {
+            expr: ast::ExprNode::GlobScope(global_scope),
+        })
     }
 
-    fn parse_fun(&mut self) -> ParsingResult<ast::Fun> {
+    fn parse_fun(&mut self) -> ParsingResult<ast::Expression> {
         self.consume_tok(KfTokKind::KwFn)?;
         let name = self.consume_name_literal()?;
         self.consume_tok(KfTokKind::SymParenthOpen)?;
@@ -106,11 +105,13 @@ impl<'a> KfParser<'a> {
             }
         };
         let body = self.parse_scope()?;
-        Ok(ast::Fun {
-            name,
-            args,
-            ret,
-            body,
+        Ok(ast::Expression {
+            expr: ast::ExprNode::FnDef(ast::Fun {
+                name,
+                args,
+                ret,
+                body,
+            }),
         })
     }
 
@@ -402,6 +403,7 @@ fn error_eof() -> ParsingErrs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lang_def::Lang;
 
     fn throw_errors(errs: ParsingErrs) -> Result<(), String> {
         if errs.len() == 0 {

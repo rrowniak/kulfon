@@ -1,0 +1,4 @@
+fn main() {
+    print("program");
+    print(1 + 3 * (3/8));
+}
