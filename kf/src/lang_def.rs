@@ -20,19 +20,29 @@ const RUST_KEYWORDS: &[&str] = &[
     // Keywords that are not used in Rust, but are reserved for compatibility with other languages
     "alignof", "become", "offsetof", "priv", "pure", "sizeof", "typeof", "unsized", "yield"
 ];
-#[rustfmt::skip]
+
 const KULFON_KEYWORDS: &[&str] = &[
-    KF_IF, KF_ELSE, KF_FN, KF_PUB,
-    "loop", "for", "while",
+    KF_IF,
+    KF_ELSE,
+    KF_FOR,
+    KF_WHILE,
+    KF_LOOP,
+    KF_FN,
+    KF_PUB,
+    KF_LET,
+    KF_MUT,
+    KF_IN,
+    KF_BREAK,
+    KF_CONTINUE,
 ];
 const KULFON_RES_KEYWORDS: &[&str] = RUST_KEYWORDS;
 #[rustfmt::skip]
 const KULFON_SPEC_SYMBOLS: &[&str] = &[
     KF_CURLY_OPEN, KF_CURLY_CLOSE, KF_PARENTH_OPEN, KF_PARENTH_CLOSE, KF_SEMI, KF_ARROW,
-    KF_DOT, KF_COMMA, KF_EQ, KF_NE, KF_GT, KF_GE, KF_LT, KF_LE, KF_MINUS, KF_PLUS, KF_SLASH,
-    KF_STAR, KF_BANG,
+    KF_DOT, KF_COMMA, KF_SEMI, KF_EQ, KF_NE, KF_GT, KF_GE, KF_LT, KF_LE, KF_MINUS, KF_PLUS, KF_SLASH,
+    KF_STAR, KF_BANG, KF_ASSIGN,
     // Single-character symbols
-    "[", "]", "%", "^", "&", "|", "~", "=",
+    "[", "]", "%", "^", "&", "|", "~",
     "@", "#", "$", "?", ";", ":", ",", ".", "'", "\"", "_",
     // Multi-character operators and symbols
     "=>", "::", "..", "...", "..=", "&&", "||", "<<", ">>", "+=", 
@@ -44,8 +54,16 @@ const KULFON_SPEC_SYMBOLS: &[&str] = &[
 // kulfon keywords
 const KF_IF: &str = "if";
 const KF_ELSE: &str = "else";
+const KF_FOR: &str = "for";
+const KF_WHILE: &str = "while";
+const KF_LOOP: &str = "loop";
 const KF_FN: &str = "fn";
 const KF_PUB: &str = "pub";
+const KF_LET: &str = "let";
+const KF_MUT: &str = "mut";
+const KF_IN: &str = "in";
+const KF_BREAK: &str = "break";
+const KF_CONTINUE: &str = "continue";
 // kulfon special literals
 const KF_TRUE: &str = "true";
 const KF_FALSE: &str = "false";
@@ -55,6 +73,7 @@ const KF_CURLY_CLOSE: &str = "}";
 const KF_PARENTH_OPEN: &str = "(";
 const KF_PARENTH_CLOSE: &str = ")";
 const KF_SEMI: &str = ";";
+const KF_COLON: &str = ":";
 const KF_ARROW: &str = "->";
 const KF_DOT: &str = ".";
 const KF_COMMA: &str = ",";
@@ -70,14 +89,23 @@ const KF_MINUS: &str = "-";
 const KF_SLASH: &str = "/";
 const KF_STAR: &str = "*";
 const KF_BANG: &str = "!";
+const KF_ASSIGN: &str = "=";
 
 #[derive(Debug, PartialEq)]
 pub enum KfTokKind {
     // keywords
     KwIf,
     KwElse,
+    KwFor,
+    KwWhile,
+    KwLoop,
     KwFn,
     KwPub,
+    KwLet,
+    KwMut,
+    KwIn,
+    KwBreak,
+    KwContinue,
     // special literals
     SlTrue,
     SlFalse,
@@ -87,6 +115,7 @@ pub enum KfTokKind {
     SymParenthOpen,
     SymParenthClose,
     SymSemi,
+    SymColon,
     SymArrow,
     SymDot,
     SymComma,
@@ -102,6 +131,7 @@ pub enum KfTokKind {
     OpSlash,
     OpStar,
     OpBang,
+    OpAssign,
     // literals
     LitString,
     LitChar,
@@ -116,8 +146,16 @@ impl KfTokKind {
         let t = match s {
             KF_IF => KfTokKind::KwIf,
             KF_ELSE => KfTokKind::KwElse,
+            KF_FOR => KfTokKind::KwFor,
+            KF_WHILE => KfTokKind::KwWhile,
+            KF_LOOP => KfTokKind::KwLoop,
             KF_FN => KfTokKind::KwFn,
             KF_PUB => KfTokKind::KwPub,
+            KF_LET => KfTokKind::KwLet,
+            KF_MUT => KfTokKind::KwMut,
+            KF_IN => KfTokKind::KwIn,
+            KF_BREAK => KfTokKind::KwBreak,
+            KF_CONTINUE => KfTokKind::KwContinue,
             KF_TRUE => KfTokKind::SlTrue,
             KF_FALSE => KfTokKind::SlFalse,
             KF_CURLY_OPEN => KfTokKind::SymCurlyOpen,
@@ -128,6 +166,7 @@ impl KfTokKind {
             KF_ARROW => KfTokKind::SymArrow,
             KF_DOT => KfTokKind::SymDot,
             KF_COMMA => KfTokKind::SymComma,
+            KF_SEMI => KfTokKind::SymSemi,
             KF_EQ => KfTokKind::OpEq,
             KF_NE => KfTokKind::OpNe,
             KF_GT => KfTokKind::OpGt,
@@ -139,6 +178,7 @@ impl KfTokKind {
             KF_SLASH => KfTokKind::OpSlash,
             KF_STAR => KfTokKind::OpStar,
             KF_BANG => KfTokKind::OpBang,
+            KF_ASSIGN => KfTokKind::OpAssign,
             _ => return None,
         };
         Some(t)

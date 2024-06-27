@@ -11,7 +11,7 @@ pub struct Fun {
     pub name: String,
     pub args: Vec<VarDecl>,
     pub ret: TypeDecl,
-    pub body: Scope,
+    pub body: Box<Node>,
 }
 
 #[derive(Debug)]
@@ -26,33 +26,76 @@ pub struct VarDecl {
 }
 
 #[derive(Debug)]
-pub struct Scope {
-    pub exprs: Vec<Expression>,
+pub struct Node {
+    pub val: Ntype,
 }
 
 #[derive(Debug)]
-pub struct Expression {
-    pub expr: ExprNode,
+pub struct Elif {
+    pub cond: Box<Node>,
+    pub body: Box<Node>,
 }
 
 #[derive(Debug)]
-pub enum ExprNode {
-    Eq(Box<Expression>, Box<Expression>),
-    Neq(Box<Expression>, Box<Expression>),
-    Gt(Box<Expression>, Box<Expression>),
-    Ge(Box<Expression>, Box<Expression>),
-    Lt(Box<Expression>, Box<Expression>),
-    Le(Box<Expression>, Box<Expression>),
-    Plus(Box<Expression>, Box<Expression>),
-    Minus(Box<Expression>, Box<Expression>),
-    Slash(Box<Expression>, Box<Expression>),
-    Star(Box<Expression>, Box<Expression>),
-    Bang(Box<Expression>),
-    UMinus(Box<Expression>), // unary minus
+pub struct If {
+    pub cond: Box<Node>,
+    pub body: Box<Node>,
+    pub elif: Vec<Elif>,
+    pub else_body: Option<Box<Node>>,
+}
 
-    GlobScope(Vec<Expression>),
+#[derive(Debug)]
+pub struct For {
+    pub var_pattern: String,
+    pub in_expr: Box<Node>,
+    pub body: Box<Node>,
+}
+
+#[derive(Debug)]
+pub struct While {
+    pub cond: Box<Node>,
+    pub body: Box<Node>,
+}
+
+#[derive(Debug)]
+pub struct Loop {
+    pub body: Box<Node>,
+}
+
+#[derive(Debug)]
+pub struct VarDef {
+    pub mutable: bool,
+    pub name: String,
+    pub vartype: Option<TypeDecl>,
+    pub expr: Option<Box<Node>>,
+}
+
+#[derive(Debug)]
+pub enum Ntype {
+    // operators
+    Eq(Box<Node>, Box<Node>),
+    Neq(Box<Node>, Box<Node>),
+    Gt(Box<Node>, Box<Node>),
+    Ge(Box<Node>, Box<Node>),
+    Lt(Box<Node>, Box<Node>),
+    Le(Box<Node>, Box<Node>),
+    Plus(Box<Node>, Box<Node>),
+    Minus(Box<Node>, Box<Node>),
+    Slash(Box<Node>, Box<Node>),
+    Star(Box<Node>, Box<Node>),
+    Bang(Box<Node>),
+    UMinus(Box<Node>), // unary minus
+    // control flow
+    If(If),
+    For(For),
+    While(While),
+    Loop(Loop),
+    // higher level structures
+    Scope(Vec<Node>),
     FnDef(Fun),
-    FnCall(String, Vec<Expression>),
+    FnCall(String, Vec<Node>),
+    VarDef(VarDef),
+    // terminals
     String(String),
     Literal(String),
     Char(String),
