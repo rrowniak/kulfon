@@ -1,6 +1,6 @@
 # kulfon lang
 
-Research project.
+This is a research project.
 
 Experiments with context free grammars (CFG) and attempts to create a new language.
 
@@ -20,10 +20,52 @@ Experiments with context free grammars (CFG) and attempts to create a new langua
 - Easy integration with `C` libraries - instead of rewriting whole world just use what's already proven.
 - Many features that are common for modern languages like built-in unit tests or modules.
 
-## Hello world
+## Examples
+### Hello world
 Hello world example in Kulfon:
 ```rust
 fn main() {
     println("Hello world!");
 }
 ```
+
+### Control flow
+
+`if` statent
+```rust
+let isCrazyMurderingRobot = false;
+
+fn interact_with_human() {
+    // no, isCrazyMurderingRobot = true won't compile :)
+    if isCrazyMurderingRobot == true {
+        kill(humans);
+    } else {
+        be_nice_to(human);
+    }
+}
+```
+
+Loops
+```rust
+fn shoot_for_the_moon() -> bool {
+    for countdown in [10..1] {
+        say(countdown);
+    }
+
+    while in_athmosphere() {
+        keep_accelerating();
+        if max_performance() {
+            break;
+        }
+    }
+
+    let mission_accomplished = loop {
+        if look_around() == Target::Moon {
+            break true;
+        }
+
+        do_daily_routines();
+        landed_among_start() || break false;
+    };
+
+    mission_accomplished
