@@ -38,8 +38,8 @@ const KULFON_KEYWORDS: &[&str] = &[
 const KULFON_RES_KEYWORDS: &[&str] = RUST_KEYWORDS;
 #[rustfmt::skip]
 const KULFON_SPEC_SYMBOLS: &[&str] = &[
-    KF_CURLY_OPEN, KF_CURLY_CLOSE, KF_PARENTH_OPEN, KF_PARENTH_CLOSE, KF_SEMI, KF_ARROW,
-    KF_DOT, KF_COMMA, KF_SEMI, KF_EQ, KF_NE, KF_GT, KF_GE, KF_LT, KF_LE, KF_MINUS, KF_PLUS, KF_SLASH,
+    KF_CURLY_OPEN, KF_CURLY_CLOSE, KF_PARENTH_OPEN, KF_PARENTH_CLOSE, KF_SEMI, KF_COLON, KF_ARROW,
+    KF_DOT, KF_COMMA, KF_EQ, KF_NE, KF_GT, KF_GE, KF_LT, KF_LE, KF_MINUS, KF_PLUS, KF_SLASH,
     KF_STAR, KF_BANG, KF_ASSIGN,
     // Single-character symbols
     "[", "]", "%", "^", "&", "|", "~",
@@ -163,10 +163,10 @@ impl KfTokKind {
             KF_PARENTH_OPEN => KfTokKind::SymParenthOpen,
             KF_PARENTH_CLOSE => KfTokKind::SymParenthClose,
             KF_SEMI => KfTokKind::SymSemi,
+            KF_COLON => KfTokKind::SymColon,
             KF_ARROW => KfTokKind::SymArrow,
             KF_DOT => KfTokKind::SymDot,
             KF_COMMA => KfTokKind::SymComma,
-            KF_SEMI => KfTokKind::SymSemi,
             KF_EQ => KfTokKind::OpEq,
             KF_NE => KfTokKind::OpNe,
             KF_GT => KfTokKind::OpGt,

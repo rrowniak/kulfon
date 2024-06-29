@@ -122,7 +122,27 @@ impl<'a> KfParser<'a> {
     }
 
     fn parse_arg_list(&mut self) -> ParsingResult<Vec<ast::VarDecl>> {
-        Ok(Vec::new())
+        let mut ret = Vec::new();
+        if !self.check_current_tok(KfTokKind::SymParenthClose) {
+            let name = self.consume_name_literal()?;
+            self.consume_tok(KfTokKind::SymColon)?;
+            let type_dec = self.parse_type()?;
+            ret.push(ast::VarDecl { name, type_dec });
+        }
+        while !self.check_current_tok(KfTokKind::SymParenthClose) {
+            if self.match_current_tok(KfTokKind::SymComma) {
+                let name = self.consume_name_literal()?;
+                self.consume_tok(KfTokKind::SymColon)?;
+                let type_dec = self.parse_type()?;
+                ret.push(ast::VarDecl { name, type_dec });
+            } else {
+                return Err(error_from_token(
+                    self.get_curr()?,
+                    "Unexpected token while parsing function argument list",
+                ));
+            }
+        }
+        Ok(ret)
     }
 
     fn parse_type(&mut self) -> ParsingResult<ast::TypeDecl> {
@@ -315,8 +335,7 @@ impl<'a> KfParser<'a> {
             ret.push(self.parse_expression()?);
         }
         while !self.check_current_tok(KfTokKind::SymParenthClose) {
-            if self.check_current_tok(KfTokKind::SymComma) {
-                self.consume_tok(KfTokKind::SymComma)?;
+            if self.match_current_tok(KfTokKind::SymComma) {
                 ret.push(self.parse_expression()?);
             } else {
                 return Err(error_from_token(
@@ -586,14 +605,18 @@ mod tests {
         let (tokens, errors) = convert_tok_to_kftok(&tokens);
         throw_errors(errors)?;
         let mut kfparser = KfParser::new(&tokens);
-        let ast = match kfparser.parse_prog() {
+        let _ast = match kfparser.parse_prog() {
             Ok(ast) => ast,
             Err(errs) => {
-                throw_errors(errs)?;
-                panic!("That place should be unreachable.")
+                let mut err_msg = String::new();
+                for e in errs {
+                    err_msg += code;
+                    err_msg += &format!("\n{}^\n", " ".repeat(e.at.col - 1));
+                    err_msg += &format!("Syntax error: {}", e.msg)
+                }
+                return Err(err_msg);
             }
         };
-        println!("Ast: {:?}", ast);
         Ok(())
     }
 
@@ -610,6 +633,31 @@ mod tests {
             Err(e) => {
                 println!("{:?}", e);
                 assert!(false);
+            }
+        }
+    }
+
+    #[test]
+    fn parse_correct_code() {
+        let tcs = [
+            "fn main(){}",
+            "fn _fn() {}",
+            "let variable = 10;",
+            "let mut _xyz: u32 = 1 + 2;",
+            "let mut a;",
+            "fn abc(a: usize, b: i32, c: bool) { println(a, b, c, 3 / 8); }",
+            "fn abc() { if x >= 9 { println(x);} else {println(y);}}",
+            "fn abc() { if x == y { println(x); if x == true {}} else if cc==8 {println(y);}}",
+            "fn a() { while x < 10 {println(x);}}",
+        ];
+        for c in tcs {
+            match parse_code(c) {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Parsing: {}", c);
+                    println!("{:}", e);
+                    assert!(false);
+                }
             }
         }
     }
