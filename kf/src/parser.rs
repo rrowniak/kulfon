@@ -32,7 +32,8 @@ fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErr
             lexer::TokenKind::String => KfTokKind::LitString,
             lexer::TokenKind::Literal => KfTokKind::Literal,
             lexer::TokenKind::Character => KfTokKind::LitChar,
-            lexer::TokenKind::Comment => KfTokKind::Comment,
+            // lexer::TokenKind::Comment => KfTokKind::Comment,
+            lexer::TokenKind::Comment =>continue,
         };
         kftokens.push(KfToken {
             kind: new_kind,

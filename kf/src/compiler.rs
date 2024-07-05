@@ -8,6 +8,7 @@ use crate::cbackend;
 use crate::lang_def;
 use crate::lexer;
 use crate::parser;
+use crate::kf_core;
 
 pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Result<(), String> {
     let kulfon_lang = lang_def::Lang::new();
@@ -33,7 +34,13 @@ pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Resu
         }
     };
 
-    let c_code = cbackend::gen_c_code(&ast)?;
+    let mut int_repr = kf_core::InterRepr::from(ast);
+
+    if let Err(e) = int_repr.compile() {
+        return Err(process_errors(&input_source, &e));
+    }
+
+    let c_code = cbackend::gen_c_code(&int_repr)?;
 
     if let Err(e) = std::fs::write(&output, c_code) {
         return Err(format!(

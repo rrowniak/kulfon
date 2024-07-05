@@ -5,7 +5,7 @@
 // Created on: 04.06.2024
 // ---------------------------------------------------
 
-use crate::lang_def::{Lang, ParsingError, Range, RangeBased, TextPoint};
+use crate::lang_def::{Lang, ParsingError, RangeBased, TextPoint};
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
@@ -290,7 +290,7 @@ impl<'a> Tokenizer<'a> {
                         status = TokenizeState::Idle;
                         let kind = match r {
                             RangeBased::LineComment(_)
-                            | RangeBased::DocComment(_)
+                            // | RangeBased::DocComment(_)
                             | RangeBased::Comment(_) => TokenKind::Comment,
                             RangeBased::String(_) | RangeBased::RawString(_) => TokenKind::String,
                         };
@@ -318,7 +318,7 @@ impl<'a> Tokenizer<'a> {
                 if r.get_range().eof_allowed {
                     let kind = match r {
                         RangeBased::LineComment(_)
-                        | RangeBased::DocComment(_)
+                        // | RangeBased::DocComment(_)
                         | RangeBased::Comment(_) => TokenKind::Comment,
                         RangeBased::String(_) | RangeBased::RawString(_) => TokenKind::String,
                     };

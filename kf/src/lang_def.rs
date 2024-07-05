@@ -135,8 +135,8 @@ pub enum KfTokKind {
     // literals
     LitString,
     LitChar,
-    LitInt,
-    LitFloat,
+    // LitInt,
+    // LitFloat,
     Literal,
     Comment,
 }
@@ -203,7 +203,7 @@ pub struct Range {
 #[derive(Clone)]
 pub enum RangeBased {
     LineComment(Range),
-    DocComment(Range),
+    // DocComment(Range),
     Comment(Range),
     String(Range),
     RawString(Range),
@@ -213,7 +213,7 @@ impl RangeBased {
     pub fn get_range(&self) -> &Range {
         match self {
             RangeBased::LineComment(r) => r,
-            RangeBased::DocComment(r) => r,
+            // RangeBased::DocComment(r) => r,
             RangeBased::Comment(r) => r,
             RangeBased::String(r) => r,
             RangeBased::RawString(r) => r,
@@ -229,14 +229,14 @@ pub struct Lang {
 }
 
 impl Lang {
-    pub fn new_empty() -> Lang {
-        Lang {
-            keywords: Vec::new(),
-            reserved_keywords: Vec::new(),
-            special_sym: Vec::new(),
-            range_based: Vec::new(),
-        }
-    }
+    // pub fn new_empty() -> Lang {
+    //     Lang {
+    //         keywords: Vec::new(),
+    //         reserved_keywords: Vec::new(),
+    //         special_sym: Vec::new(),
+    //         range_based: Vec::new(),
+    //     }
+    // }
     pub fn new() -> Lang {
         let mut sym = KULFON_SPEC_SYMBOLS
             .iter()

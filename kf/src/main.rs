@@ -10,8 +10,10 @@ mod cbackend;
 mod compiler;
 mod lang_def;
 mod lexer;
+mod kf_core;
 mod parse_iter;
 mod parser;
+mod type_system;
 
 const VERSION: &str = "0.0.1";
 
