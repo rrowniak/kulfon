@@ -161,13 +161,13 @@ impl<'a> KfParser<'a> {
                 }
                 KfTokKind::KwLet => scope.push(self.parse_var()?),
                 KfTokKind::KwBreak => {
-                    self.consume_tok(KfTokKind::KwBreak);
-                    self.consume_tok(KfTokKind::SymSemi);
+                    self.consume_tok(KfTokKind::KwBreak)?;
+                    self.consume_tok(KfTokKind::SymSemi)?;
                     scope.push(ast::Node {val: ast::Ntype::Break});
                 }
                 KfTokKind::KwContinue => {
-                    self.consume_tok(KfTokKind::KwContinue);
-                    self.consume_tok(KfTokKind::SymSemi);
+                    self.consume_tok(KfTokKind::KwContinue)?;
+                    self.consume_tok(KfTokKind::SymSemi)?;
                     scope.push(ast::Node {val: ast::Ntype::Continue});
                 }
                 _ => {

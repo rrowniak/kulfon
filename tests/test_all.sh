@@ -14,6 +14,7 @@ for kf_src in test*.kf; do
     $COMPILER compile -i $kf_src -o $DEST
     if [ $? -eq 0 ]; then
         gcc -ansi -pedantic-errors $DEST -o $DEST_EXE
+            gcc -Wall -Wextra -std=c89 -pedantic -pedantic-errors -Wmissing-prototypes -Wstrict-prototypes -Wold-style-definition $DEST -o $DEST_EXE
         if [ $? -eq 0 ]; then
             OUT=$($DEST_EXE)
             EXPECTED=$(head -n1 $kf_src | sed -e 's/\/\///')

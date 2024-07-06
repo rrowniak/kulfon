@@ -135,8 +135,8 @@ impl<'a> CGen<'a> {
                 self.indent_str(indent),
                 self.process_ast_node(a, 0)?,
             )),
-            ast::Ntype::Break => Ok(format!("{}break;\n", self.indent_str(indent))),
-            ast::Ntype::Continue => Ok(format!("{}continue;\n", self.indent_str(indent))),
+            ast::Ntype::Break => Ok(format!("{}break;", self.indent_str(indent))),
+            ast::Ntype::Continue => Ok(format!("{}continue;", self.indent_str(indent))),
             ast::Ntype::False => {
                 self.bool_in_use = true;
                 Ok(format!("false"))
@@ -152,7 +152,7 @@ impl<'a> CGen<'a> {
             ast::Ntype::VarDef(var) => {
                 match self.loc_variables.last_mut() {
                     Some(v) => v.push(var.clone()),
-                    None => panic!("No stack"),
+                    None => panic!("No stack for this scope!"),
                 }
                 Ok("".into())
             }
@@ -180,8 +180,9 @@ impl<'a> CGen<'a> {
                 );
             }
             let args = "void";
+            let indent_ret = self.indent_str(indent + INDENT_LEVEL);
             format!(
-                "{indent_s}int {}({args}) {{{body} \n{indent_s}}}",
+                "{indent_s}int {}({args}) {{{body} \n{indent_ret}return 0;\n{indent_s}}}",
                 fn_def.name,
             )
         } else {
@@ -201,7 +202,6 @@ impl<'a> CGen<'a> {
             scope_str += &self.process_ast_node(&e, indent)?;
         }
         let mut loc_vars = String::new();
-        let loc_scope_vars = self.loc_variables.clone();
         let loc_scope_vars = self.loc_variables.pop().unwrap();
         for v in loc_scope_vars {
             loc_vars += "\n";
@@ -248,7 +248,7 @@ impl<'a> CGen<'a> {
         Ok(ret)
     }
 
-    fn transform_for(&mut self, for_: &ast::For, indent: usize) -> ResultC {
+    fn transform_for(&mut self, _for_: &ast::For, _indent: usize) -> ResultC {
         todo!()
     }
 

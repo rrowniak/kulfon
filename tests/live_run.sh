@@ -23,7 +23,8 @@ while true; do
         if [ $? -eq 0 ]; then
             cat $DEST
             echo
-            gcc -ansi -pedantic-errors $DEST -o $DEST_EXE
+            #gcc -ansi -pedantic-errors $DEST -o $DEST_EXE
+            gcc -Wall -Wextra -std=c89 -pedantic -pedantic-errors -Wmissing-prototypes -Wstrict-prototypes -Wold-style-definition $DEST -o $DEST_EXE
             if [ $? -eq 0 ]; then
                 echo "Output:"
                 $DEST_EXE
