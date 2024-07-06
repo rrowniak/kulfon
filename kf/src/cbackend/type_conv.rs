@@ -7,7 +7,7 @@
 use crate::type_system::BuiltInT;
 
 pub fn required_headers() -> Vec<&'static str> {
-    vec!["<stdint.h>", "<stddef.h>"]
+    vec!["stdint.h", "stddef.h"]
 }
 
 pub fn convert_built_in(kf_type: BuiltInT) -> Option<&'static str> {

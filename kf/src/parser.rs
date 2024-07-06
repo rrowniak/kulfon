@@ -33,7 +33,7 @@ fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErr
             lexer::TokenKind::Literal => KfTokKind::Literal,
             lexer::TokenKind::Character => KfTokKind::LitChar,
             // lexer::TokenKind::Comment => KfTokKind::Comment,
-            lexer::TokenKind::Comment =>continue,
+            lexer::TokenKind::Comment => continue,
         };
         kftokens.push(KfToken {
             kind: new_kind,
@@ -160,6 +160,16 @@ impl<'a> KfParser<'a> {
                     scope.push(self.parse_ctrl_flow()?)
                 }
                 KfTokKind::KwLet => scope.push(self.parse_var()?),
+                KfTokKind::KwBreak => {
+                    self.consume_tok(KfTokKind::KwBreak);
+                    self.consume_tok(KfTokKind::SymSemi);
+                    scope.push(ast::Node {val: ast::Ntype::Break});
+                }
+                KfTokKind::KwContinue => {
+                    self.consume_tok(KfTokKind::KwContinue);
+                    self.consume_tok(KfTokKind::SymSemi);
+                    scope.push(ast::Node {val: ast::Ntype::Continue});
+                }
                 _ => {
                     scope.push(self.parse_expression()?);
                     self.consume_tok(KfTokKind::SymSemi)?;

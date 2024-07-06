@@ -5,7 +5,9 @@
 // Created on: 25.06.2024
 // ---------------------------------------------------
 use crate::ast;
+use crate::cbackend::type_conv;
 use crate::kf_core;
+use crate::type_system;
 use std::collections::{HashMap, HashSet};
 
 pub type ResultC = Result<String, String>;
@@ -21,6 +23,8 @@ struct CGen<'a> {
     cstd_calls: HashSet<String>,
     fun_to_header_map: HashMap<&'static str, &'static str>,
     bool_in_use: bool,
+    stdlibs: HashSet<&'static str>,
+    loc_variables: Vec<Vec<ast::VarDef>>,
 }
 
 impl<'a> CGen<'a> {
@@ -31,6 +35,8 @@ impl<'a> CGen<'a> {
             cstd_calls: HashSet::new(),
             fun_to_header_map: HashMap::from([("printf", "stdio.h")]),
             bool_in_use: false,
+            stdlibs: HashSet::new(),
+            loc_variables: Vec::new(),
         }
     }
 
@@ -129,6 +135,8 @@ impl<'a> CGen<'a> {
                 self.indent_str(indent),
                 self.process_ast_node(a, 0)?,
             )),
+            ast::Ntype::Break => Ok(format!("{}break;\n", self.indent_str(indent))),
+            ast::Ntype::Continue => Ok(format!("{}continue;\n", self.indent_str(indent))),
             ast::Ntype::False => {
                 self.bool_in_use = true;
                 Ok(format!("false"))
@@ -138,10 +146,16 @@ impl<'a> CGen<'a> {
                 Ok(format!("true"))
             }
             ast::Ntype::If(if_) => self.transform_if(if_, indent),
-            ast::Ntype::For(for_) => todo!(),
-            ast::Ntype::While(while_) => todo!(),
-            ast::Ntype::Loop(loop_) => todo!(),
-            ast::Ntype::VarDef(var) => todo!(),
+            ast::Ntype::For(for_) => self.transform_for(for_, indent),
+            ast::Ntype::While(while_) => self.transform_while(while_, indent),
+            ast::Ntype::Loop(loop_) => self.transform_loop(loop_, indent),
+            ast::Ntype::VarDef(var) => {
+                match self.loc_variables.last_mut() {
+                    Some(v) => v.push(var.clone()),
+                    None => panic!("No stack"),
+                }
+                Ok("".into())
+            }
             ast::Ntype::String(s) => Ok(format!("{}\"{}\"", self.indent_str(indent), s)),
             ast::Ntype::Char(s) => Ok(format!("'{s}'")),
             ast::Ntype::Literal(s) => Ok(format!("{}{}", self.indent_str(indent), s)),
@@ -180,12 +194,21 @@ impl<'a> CGen<'a> {
     }
 
     fn transform_scope(&mut self, scope_nodes: &Vec<ast::Node>, indent: usize) -> ResultC {
+        self.loc_variables.push(Vec::new());
         let mut scope_str = String::new();
         for e in scope_nodes.iter() {
             scope_str += "\n";
             scope_str += &self.process_ast_node(&e, indent)?;
         }
-        Ok(scope_str)
+        let mut loc_vars = String::new();
+        let loc_scope_vars = self.loc_variables.clone();
+        let loc_scope_vars = self.loc_variables.pop().unwrap();
+        for v in loc_scope_vars {
+            loc_vars += "\n";
+            loc_vars += self.transform_var_def(&v, indent)?.as_str();
+            loc_vars += ";";
+        }
+        Ok(format!("{loc_vars}{scope_str}"))
     }
 
     fn transform_fn_call(&mut self, name: &str, args: &Vec<ast::Node>, indent: usize) -> ResultC {
@@ -225,8 +248,62 @@ impl<'a> CGen<'a> {
         Ok(ret)
     }
 
+    fn transform_for(&mut self, for_: &ast::For, indent: usize) -> ResultC {
+        todo!()
+    }
+
+    fn transform_while(&mut self, while_: &ast::While, indent: usize) -> ResultC {
+        let cond = self.process_ast_node(&while_.cond, 0)?;
+        let body = self.process_ast_node(&while_.body, indent + INDENT_LEVEL)?;
+        let indent_s = self.indent_str(indent);
+        let ret = format!("{indent_s}while ({cond}) {{{body}\n{indent_s}}}");
+        Ok(ret)
+    }
+
+    fn transform_loop(&mut self, loop_: &ast::Loop, indent: usize) -> ResultC {
+        let body = self.process_ast_node(&loop_.body, indent + INDENT_LEVEL)?;
+        let indent_s = self.indent_str(indent);
+        self.bool_in_use = true;
+        let ret = format!("{indent_s}while (true) {{{body}\n{indent_s}}}");
+        Ok(ret)
+    }
+
+    fn transform_var_def(&mut self, var: &ast::VarDef, indent: usize) -> ResultC {
+        let mut ret = String::new();
+        let indent_s = self.indent_str(indent);
+        ret += indent_s.as_str();
+        if var.mutable {
+            ret += "const ";
+        }
+        let varname = &var.name;
+        let type_kf = var
+            .vartype
+            .clone()
+            .expect(&format!("Type for {varname} must be deduced"));
+        if let Some(kf_built_in) = type_system::BuiltInT::from_str(&type_kf.typename) {
+            // this is a built-in KF type, convert it to C type
+            let type_c = type_conv::convert_built_in(kf_built_in.clone()).expect(&format!(
+                "Fatal error while convertig KF built-in type {kf_built_in:?} into C-type",
+            ));
+            if kf_built_in == type_system::BuiltInT::Bool {
+                self.bool_in_use = true;
+            } else {
+                self.stdlibs.extend(type_conv::required_headers());
+            }
+            ret += format!("{type_c} {varname}").as_str();
+        } else {
+            // presumably a custom type
+            todo!();
+        }
+
+        let var_expr = var.expr.clone().expect("Uninitialized variable detected");
+        ret += format!(" = {}", self.process_ast_node(&var_expr, 0)?).as_str();
+
+        Ok(ret)
+    }
+
     fn gen_include_directives(&self) -> ResultC {
-        let mut stdlibs = HashSet::new();
+        let mut stdlibs: HashSet<&'static str> = HashSet::new();
         for fun in self.cstd_calls.iter() {
             let header = match self.fun_to_header_map.get(fun.as_str()) {
                 Some(h) => h,
@@ -235,7 +312,7 @@ impl<'a> CGen<'a> {
             stdlibs.insert(header);
         }
         let mut ret = String::new();
-        for h in stdlibs {
+        for h in stdlibs.union(&self.stdlibs) {
             ret += &format!("#include <{h}>\n");
         }
 

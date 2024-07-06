@@ -6,7 +6,7 @@
 // ---------------------------------------------------
 
 // In this design everything is an expression, even statements
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fun {
     pub name: String,
     pub args: Vec<VarDecl>,
@@ -14,29 +14,29 @@ pub struct Fun {
     pub body: Box<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TypeDecl {
     pub typename: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VarDecl {
     pub name: String,
     pub type_dec: TypeDecl,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub val: Ntype,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Elif {
     pub cond: Box<Node>,
     pub body: Box<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct If {
     pub cond: Box<Node>,
     pub body: Box<Node>,
@@ -44,25 +44,25 @@ pub struct If {
     pub else_body: Option<Box<Node>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct For {
     pub var_pattern: String,
     pub in_expr: Box<Node>,
     pub body: Box<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct While {
     pub cond: Box<Node>,
     pub body: Box<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Loop {
     pub body: Box<Node>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VarDef {
     pub mutable: bool,
     pub name: String,
@@ -70,7 +70,7 @@ pub struct VarDef {
     pub expr: Option<Box<Node>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Ntype {
     // operators
     Eq(Box<Node>, Box<Node>),
@@ -90,6 +90,8 @@ pub enum Ntype {
     For(For),
     While(While),
     Loop(Loop),
+    Break,
+    Continue,
     // higher level structures
     Scope(Vec<Node>),
     FnDef(Fun),

@@ -4,6 +4,7 @@
 // License: Read LICENSE file
 // Created on: 04.07.2024
 // ---------------------------------------------------
+#[derive(Debug, PartialEq, Clone)]
 pub enum BuiltInT {
     Bool,
     U8,

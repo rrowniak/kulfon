@@ -10,7 +10,8 @@ parse_prog_statement ::= parse_fun | parse_var | parse_mut_var
 ```
 parse_fun ::= 'fn' FN_NAME '(' parse_arg_list ')' ('->' parse_type)? parse_scope
 parse_arg_list ::= E | (ARG_NAME ':' parse_type) (',' ARG_NAME ':' parse_type)*
-parse_scope ::= '{' ((parse_ctrl_flow | parse_var | parse_expression) ';')* '}'
+// break and continue should be loop-specific. This is fine for now.
+parse_scope ::= '{' ((parse_ctrl_flow | parse_var | parse_expression | 'break' | 'continue') ';')* '}'
 parse_type ::= TYPE_LITERAL
 ```
 
