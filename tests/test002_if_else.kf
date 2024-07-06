@@ -1,3 +1,4 @@
+//0123
 fn main() {
     if true {
         print("0");

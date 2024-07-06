@@ -12,7 +12,7 @@ pub fn required_headers() -> Vec<&'static str> {
 
 pub fn convert_built_in(kf_type: BuiltInT) -> Option<&'static str> {
     match kf_type {
-        BuiltInT::Bool => Some("int"),
+        BuiltInT::Bool => Some("kf_boolean"),
         BuiltInT::U8 => Some("uint8_t"),
         BuiltInT::U16 => Some("uint16_t"),
         BuiltInT::U32 => Some("uint32_t"),

@@ -20,6 +20,7 @@ struct CGen<'a> {
     scope_depth: usize,
     cstd_calls: HashSet<String>,
     fun_to_header_map: HashMap<&'static str, &'static str>,
+    bool_in_use: bool,
 }
 
 impl<'a> CGen<'a> {
@@ -29,6 +30,7 @@ impl<'a> CGen<'a> {
             scope_depth: 0,
             cstd_calls: HashSet::new(),
             fun_to_header_map: HashMap::from([("printf", "stdio.h")]),
+            bool_in_use: false,
         }
     }
 
@@ -36,6 +38,11 @@ impl<'a> CGen<'a> {
         // println!("{:?}", self.mid.syntree);
         let code = self.process_ast_node(&self.mid.syntree, 0)?;
         let mut ret = self.gen_include_directives()?;
+        ret += "\n";
+        if self.bool_in_use {
+            ret += self.gen_bool_def();
+            ret += "\n";
+        }
         ret += code.as_str();
         Ok(ret)
     }
@@ -122,9 +129,15 @@ impl<'a> CGen<'a> {
                 self.indent_str(indent),
                 self.process_ast_node(a, 0)?,
             )),
-            ast::Ntype::False => Ok(format!("0")),
-            ast::Ntype::True => Ok(format!("1")),
-            ast::Ntype::If(if_) => todo!(),
+            ast::Ntype::False => {
+                self.bool_in_use = true;
+                Ok(format!("false"))
+            }
+            ast::Ntype::True => {
+                self.bool_in_use = true;
+                Ok(format!("true"))
+            }
+            ast::Ntype::If(if_) => self.transform_if(if_, indent),
             ast::Ntype::For(for_) => todo!(),
             ast::Ntype::While(while_) => todo!(),
             ast::Ntype::Loop(loop_) => todo!(),
@@ -152,13 +165,14 @@ impl<'a> CGen<'a> {
                     "main function (program entry point) shall have no return type defined".into(),
                 );
             }
+            let args = "void";
             format!(
-                "{indent_s}int {} ({args}) {{{body} \n{indent_s}}}",
+                "{indent_s}int {}({args}) {{{body} \n{indent_s}}}",
                 fn_def.name,
             )
         } else {
             format!(
-                "{indent_s}{ret_type} {} ({args}) {{{body} \n{indent_s}}}",
+                "{indent_s}{ret_type} {}({args}) {{{body} \n{indent_s}}}",
                 fn_def.name,
             )
         };
@@ -192,6 +206,25 @@ impl<'a> CGen<'a> {
         Ok(statement)
     }
 
+    fn transform_if(&mut self, if_: &ast::If, indent: usize) -> ResultC {
+        let cond = self.process_ast_node(&if_.cond, 0)?;
+        let body = self.process_ast_node(&if_.body, indent + INDENT_LEVEL)?;
+        let indent_s = self.indent_str(indent);
+        let mut ret = format!("{indent_s}if ({cond}) {{{body}\n{indent_s}}}");
+        // elifs?
+        for elif in if_.elif.iter() {
+            let cond = self.process_ast_node(&elif.cond, 0)?;
+            let body = self.process_ast_node(&elif.body, indent + INDENT_LEVEL)?;
+            ret += &format!(" else if ({cond}) {{\n{body}\n{indent_s}}}");
+        }
+        // else?
+        if let Some(else_) = &if_.else_body {
+            let body = self.process_ast_node(&else_, indent + INDENT_LEVEL)?;
+            ret += &format!(" else {{\n{body}\n{indent_s}}}");
+        }
+        Ok(ret)
+    }
+
     fn gen_include_directives(&self) -> ResultC {
         let mut stdlibs = HashSet::new();
         for fun in self.cstd_calls.iter() {
@@ -207,6 +240,10 @@ impl<'a> CGen<'a> {
         }
 
         Ok(ret)
+    }
+
+    fn gen_bool_def(&self) -> &'static str {
+        "typedef enum {false, true} kf_boolean;"
     }
 
     fn indent_str(&self, indent: usize) -> String {

@@ -20,7 +20,7 @@ Experiments with context free grammars (CFG) and attempts to create a new langua
 - Easy integration with `C` libraries - instead of rewriting whole world just use what's already proven.
 - Many features that are common for modern languages like built-in unit tests or modules.
 
-## Benefits of beinf a C transpiler
+## Benefits of being a C transpiler
 - Hard to imagine a platform that does not have a dedicated C compiler. Now you can use Kulfon there.
 - C compilers are trusted as they're with us since 1970. Let's take advantage of that.
 - We don't need to reivent the wheel by implementing heavy optimization techniques on assembly/machine level.

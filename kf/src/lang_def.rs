@@ -34,6 +34,8 @@ const KULFON_KEYWORDS: &[&str] = &[
     KF_IN,
     KF_BREAK,
     KF_CONTINUE,
+    KF_TRUE,
+    KF_FALSE,
 ];
 const KULFON_RES_KEYWORDS: &[&str] = RUST_KEYWORDS;
 #[rustfmt::skip]
