@@ -1,7 +1,11 @@
+# Kulfon memory model
+## Plain old data (POD)
+Variables are allocated on the stack, copy by value semantics is employed. POD variables are not moveable.
+
 # Kulfon built-in primitive types
 ## Boolean
 
-`bool`, 
+`bool` 
 
 ## Integer
 
@@ -17,7 +21,7 @@
 
 ## Textual
 
-`char`, 'rune`
+`char`, `rune`
 
 # Kulfon complex types
 
@@ -47,7 +51,8 @@ ArrayType: `[` Type `;` Expression `]`
 
 # C mapping
 
-This mapping suggest C99 while Kulfon promises to be compliant with C89. Depending on the environment, Kulfon might pregenerate these types if they're missing to be compliant with C89.
+This mapping suggests conformance with C99 while Kulfon promises to be compliant with C89. Depending on the environment, Kulfon might pregenerate these types if they're missing to be compliant with C89, or, you need to provide correct mapping in the platform configuration.
+
 [See here](https://stackoverflow.com/questions/62937049/stdint-h-in-ansi-c-c89) and [here](https://stackoverflow.com/questions/44590043/why-is-generic-keyword-supported-in-c99-or-c90-modes/44590122#44590122) for reference.
 
 
