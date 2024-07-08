@@ -155,6 +155,12 @@ impl<'a> KfParser<'a> {
         self.consume_tok(KfTokKind::SymCurlyOpen)?;
         let mut scope = Vec::new();
         while !self.check_current_tok(KfTokKind::SymCurlyClose) {
+            if let Some(t) = self.iter.lookahead(1) {
+                if t.kind == KfTokKind::OpAssign {
+                    scope.push(self.parse_assign()?);
+                    continue;
+                }
+            }
             match self.get_curr()?.kind {
                 KfTokKind::KwIf | KfTokKind::KwFor | KfTokKind::KwWhile | KfTokKind::KwLoop => {
                     scope.push(self.parse_ctrl_flow()?)
@@ -491,6 +497,15 @@ impl<'a> KfParser<'a> {
         })
     }
 
+    fn parse_assign(&mut self) -> ParsingResult<ast::Node> {
+        let name = self.consume_name_literal()?;
+        self.consume_tok(KfTokKind::OpAssign)?;
+        let expr = self.parse_expression()?;
+        self.consume_tok(KfTokKind::SymSemi)?;
+        Ok(ast::Node {
+            val: ast::Ntype::Assign(name, Box::new(expr)),
+        })
+    } 
     /// Returns current token or emits eof error
     fn get_curr(&self) -> ParsingResult<&'a KfToken> {
         match self.iter.peek() {

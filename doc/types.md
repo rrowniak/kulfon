@@ -1,15 +1,36 @@
 # Kulfon memory model
+
+The Kulfon language supports both dynamic memory allocations (heap) and stack based memory allocation for local variables and function arguments. There is no automatic memory managent (e.g. garbage collector, runtime tracking variable lifetimes, etc).
+
 ## Plain old data (POD)
-Variables are allocated on the stack, copy by value semantics is employed. POD variables are not moveable.
+Properties:
+- POD variables are allocated automatically on the stack
+- the _copy by value_ semantics is employed
+- POD variables are not moveable
+- POD variables have a single owner - the scope where they were defined
+- the ownership can't be transferred since move semantics is not supported by this type of variables
+- lifetime is valid within the scope
+- each variable has to be initialized. Access to initialized-only is enforced by the Kulfon compiler on compile time
 
 # Kulfon built-in primitive types
 ## Boolean
 
-`bool` 
+`bool` - might take only one of these: `true` or `false`.
+
+Example:
+```rust
+let mut enabled = false;
+// ....
+enabled = true;
+
+```
 
 ## Integer
 
 `u8`, `u16`, `u32`, `u64`, `u128`, `i8`, `i16`, `i32`, `i64`, `i128`
+
+See C mapping chapter for more details.
+`u128` and `i128` are currently not supported.
 
 ## Machine-dependent integer types
 
@@ -22,6 +43,8 @@ Variables are allocated on the stack, copy by value semantics is employed. POD v
 ## Textual
 
 `char`, `rune`
+
+`str`
 
 # Kulfon complex types
 

@@ -11,8 +11,12 @@ fn main() {
         break;
     }
 
+    let exit: bool = false;
     loop {
         print("2");
-        break;
+        exit = true;
+        if exit {
+            break;
+        }
     }
 }

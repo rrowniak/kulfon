@@ -85,6 +85,8 @@ pub enum Ntype {
     Star(Box<Node>, Box<Node>),
     Bang(Box<Node>),
     UMinus(Box<Node>), // unary minus
+    // assign
+    Assign(String, Box<Node>),
     // control flow
     If(If),
     For(For),

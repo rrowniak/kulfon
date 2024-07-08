@@ -156,6 +156,12 @@ impl<'a> CGen<'a> {
                 }
                 Ok("".into())
             }
+            ast::Ntype::Assign(left, right) => Ok(format!(
+                "{}{} = {};",
+                self.indent_str(indent),
+                left,
+                self.process_ast_node(right, 0)?
+            )),
             ast::Ntype::String(s) => Ok(format!("{}\"{}\"", self.indent_str(indent), s)),
             ast::Ntype::Char(s) => Ok(format!("'{s}'")),
             ast::Ntype::Literal(s) => Ok(format!("{}{}", self.indent_str(indent), s)),
