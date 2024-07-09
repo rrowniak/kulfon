@@ -1,6 +1,7 @@
 //0123
 fn main() {
-    if true {
+    let flag: bool = true;
+    if flag {
         print("0");
     }
 

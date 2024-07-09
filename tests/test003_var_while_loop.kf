@@ -1,4 +1,4 @@
-//012
+//012222
 fn main() {
     let var1: i32 = 0;
     if var1 == 0 {
@@ -11,8 +11,12 @@ fn main() {
         break;
     }
 
+    let mut var3: usize = 0;
     loop {
         print("2");
-        break;
+        if var3 > 2 {
+            break;
+        }
+        var3 = var3 + 1;
     }
 }

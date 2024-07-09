@@ -278,7 +278,7 @@ impl<'a> CGen<'a> {
         let mut ret = String::new();
         let indent_s = self.indent_str(indent);
         ret += indent_s.as_str();
-        if var.mutable {
+        if !var.mutable {
             ret += "const ";
         }
         let varname = &var.name;
