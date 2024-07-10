@@ -37,8 +37,13 @@ parse_expr_list ::= E | (parse_expression) (',' parse_expression)*
 ## Control flow
 ```
 parse_ctrl_flow ::= parse_if | parse_for | parse_while | parse_loop
-
+```
+### Selection statements
+```
 parse_if ::= 'if' parse_expression parse_scope ('else' 'if' parse_expression parse_scope)* ('else' parse_expression parse_scope)?
+```
+### Iteration statements
+```
 parse_for ::= 'for' VAR_NAME 'in' parse_expression parse_scope
 parse_while ::= 'while' parse_expression parse_scope
 parse_loop ::= 'loop' parse_scope

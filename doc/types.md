@@ -46,31 +46,68 @@ See C mapping chapter for more details.
 
 `str`
 
-# Kulfon complex types
+# Kulfon non-primitive types
 
 ## Never type
-`!`
+
+`__never` - this is a special type saying that program flow never get there. For example, consider the following function:
+```rust
+fn panic(msg: str) -> __never { ... }
+
+```
+Function `panic` prints a message and terminates the program execution. So, effectively it won't get to a point of returning any (possibly `void` in this case) value. For various reasons we need to highlight this fact.
+
+## Void type
+
+`void` - this is a special type indicating that no particular value is represented. 
 
 ## Arrays
-ArrayType: `[` Type `;` Expression `]`
-`let array: [f32; 3] = [0.5, 0.8, 1.0]`
+
+`let array: [f32; 3] = [0.5, 0.8, 1.0];`
+`let array: [f32; _] = [0.5, 0.8, 1.0];`
 
 ## Slices
 
+`let slice: [&i32] = [0..10];`
+
 ## Structs
 
+```rust
+struct Point {
+    x: f32,
+    y: f32,
+}
+
+```
+
 ## Enums
+
+```rust
+enum CollisionResult {
+    Collision(Point),
+    None,
+}
+```
 
 ## Unions
 
 ## Aliases
+
 `alias TempT = f32;`
 
+Type alias is just a different name for the same type. In the above example, the Kulfon compiler considers `TempT` and `f32` as the same types, that is, `f32` type.
+
 ## Type derivation
+
 `type TempT = f32;`
 
+Type derivation creates a new type that has exactly the same properties as the original type.
+
 ## Inferred types
+
 `let spins: Vec<_> = [0.5, -0.5, 0.5];`
+
+Symbol `_` means _deduce the type on yourself_.
 
 # C mapping
 
