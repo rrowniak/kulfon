@@ -26,6 +26,7 @@ More to read:
 
 ## Benefits of being a C transpiler
 - Hard to imagine a platform that does not have a dedicated C compiler. Now you can use Kulfon there.
+- Regulatory and compliance - you can still meet your standards as finally you will be using your certified C compiler.
 - C compilers are trusted as they're with us since 1970. Let's take advantage of that.
 - We don't need to reivent the wheel by implementing heavy optimization techniques on assembly/machine level.
 - Instead of trusing your shiny new XYZ compiler that generates machine code directly, you can immediately understand what Kulfon compiler is doing by looking at C generated code. Moreover, you can run your favorite static analysis tools against generated C code.
