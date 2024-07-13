@@ -7,6 +7,7 @@ Experiments with context free grammars (CFG) and attempts to create a new langua
 More to read:
 - [Types and memory model](./doc/types.md)
 - [BNF-like grammar for Kulfon](./doc/bnf.md)
+- [Project roadmap](./doc/roadmap.md)
 
 ## Assumptions
 - This is a transpiler, that is, the Kuflon code is compiled to pure `C` language (C89).
