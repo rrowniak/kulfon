@@ -286,12 +286,12 @@ impl<'a> CGen<'a> {
             .vartype
             .clone()
             .expect(&format!("Type for {varname} must be deduced"));
-        if let Some(kf_built_in) = type_system::BuiltInT::from_str(&type_kf.typename) {
+        if let Some(kf_built_in) = type_system::EvaluatedType::from_str(&type_kf.typename) {
             // this is a built-in KF type, convert it to C type
             let type_c = type_conv::convert_built_in(kf_built_in.clone()).expect(&format!(
                 "Fatal error while convertig KF built-in type {kf_built_in:?} into C-type",
             ));
-            if kf_built_in == type_system::BuiltInT::Bool {
+            if kf_built_in == type_system::EvaluatedType::Bool {
                 self.bool_in_use = true;
             } else {
                 self.stdlibs.extend(type_conv::required_headers());

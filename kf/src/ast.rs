@@ -4,8 +4,8 @@
 // License: Read LICENSE file
 // Created on: 15.06.2024
 // ---------------------------------------------------
+use crate::lang_def::TextPoint;
 
-// In this design everything is an expression, even statements
 #[derive(Debug, Clone)]
 pub struct Fun {
     pub name: String,
@@ -23,11 +23,6 @@ pub struct TypeDecl {
 pub struct VarDecl {
     pub name: String,
     pub type_dec: TypeDecl,
-}
-
-#[derive(Debug, Clone)]
-pub struct Node {
-    pub val: Ntype,
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +63,23 @@ pub struct VarDef {
     pub name: String,
     pub vartype: Option<TypeDecl>,
     pub expr: Option<Box<Node>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Node {
+    pub val: Ntype,
+    pub at: TextPoint,
+    pub meta_idx: Option<usize>,
+}
+
+impl Node {
+    pub fn new(val: Ntype, at: TextPoint) -> Self {
+        Node {
+            val,
+            at,
+            meta_idx: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
