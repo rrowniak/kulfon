@@ -5,19 +5,24 @@
 ### Finishing language parsing
 - structs (def + impl)
 - enums
+- arrays & slices
 - parsing matching
 - missing operators
+- format string parsing
 
 ### Type system
+- checking types
 - checking type conversion and correctness
 - struct type checking
+- array type checking
+- enum type checking
 - borrow checker, lifetime guard
 - move semantics 
 
 ## Next in the queue
 
 ### generics
-- parsing
+- parsing generics
 - type deducing & checking
 
 ### traits aka interfaces

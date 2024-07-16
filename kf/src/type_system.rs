@@ -71,6 +71,23 @@ impl EvaluatedType {
     pub fn is_builtin(s: &str) -> bool {
         Self::from_str(s).is_some()
     }
+    pub fn is_numeric(&self) -> bool {
+        *self == Self::I8
+            || *self == Self::I16
+            || *self == Self::I32
+            || *self == Self::I64
+            || *self == Self::I128
+            || *self == Self::U8
+            || *self == Self::U16
+            || *self == Self::U32
+            || *self == Self::U64
+            || *self == Self::U128
+            || *self == Self::ISize
+            || *self == Self::USize
+    }
+    pub fn is_floating(&self) -> bool {
+        *self == Self::F32 || *self == Self::F64
+    }
 }
 
 pub struct KfType {

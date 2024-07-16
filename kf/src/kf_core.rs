@@ -39,19 +39,23 @@ impl InterRepr {
     }
 }
 
-fn eval_types(n: &mut ast::Node, s: &mut [SideNode]) -> Result<(), Vec<ParsingError>> {
+fn eval_types(n: &mut ast::Node, s: &mut Vec<SideNode>) -> Result<(), Vec<ParsingError>> {
     match &mut n.val {
         // operators
         // binary operators:
         // * calculate a and b
-        // * a and b have to be the same type
+        // * evaluate expression type based on a and b
         // * For logic operators resulting type is bool
         // * Try to calculate the value if possible
         ast::Ntype::Eq(a, b) => {
             eval_types(a.as_mut(), s)?;
             eval_types(b.as_mut(), s)?;
-            types_must_be_equal(&a, &b, n.at, s)?;
-            let val = evaluate_logic_op(&a, &b, |a, b| a == b);
+            let t = determine_type_for_a_b(&a, &b, n.at, s)?;
+            let val = evaluate_logic_op(
+                get_side_node(&a, s).unwrap(),
+                get_side_node(&b, s).unwrap(),
+                |a, b| a == b,
+            );
             set_type(
                 n,
                 s,
@@ -137,12 +141,24 @@ fn eval_types(n: &mut ast::Node, s: &mut [SideNode]) -> Result<(), Vec<ParsingEr
     Ok(())
 }
 
-fn set_type(n: &mut ast::Node, side_nodes: &mut [SideNode], t: KfType, v: Option<EvaluatedValue>) {
+fn set_type(
+    n: &mut ast::Node,
+    side_nodes: &mut Vec<SideNode>,
+    t: KfType,
+    v: Option<EvaluatedValue>,
+) {
     match n.meta_idx {
         Some(idx) => {
             side_nodes[idx].eval_type = t;
+            side_nodes[idx].eval_val = v;
         }
-        None => panic!("That should not happes as we already initialized side nodes!"),
+        None => {
+            side_nodes.push(SideNode {
+                eval_type: t,
+                eval_val: v,
+            });
+            n.meta_idx = Some(side_nodes.len() - 1);
+        }
     }
 }
 
@@ -154,25 +170,50 @@ fn get_side_node<'a>(n: &'a ast::Node, side_nodes: &'a [SideNode]) -> Option<&'a
     }
 }
 
-fn types_must_be_equal(
+fn determine_type_for_a_b(
     a: &ast::Node,
     b: &ast::Node,
     at: TextPoint,
     side_nodes: &[SideNode],
-) -> Result<(), Vec<ParsingError>> {
+) -> Result<EvaluatedType, Vec<ParsingError>> {
     let asn = get_side_node(a, side_nodes).expect("Side node should be calculated here!");
     let bsn = get_side_node(b, side_nodes).expect("Side node should be calculated here (2)");
 
     // TODO: unfortunate names - figure out better namings
-    if asn.eval_type.eval_type == EvaluatedType::ToBeInferred
-        || bsn.eval_type.eval_type == EvaluatedType::ToBeInferred
-    {
-        // TODO: This is a place where we can suggest which type might be expected
-        // Now just say "ok" as this will be resolved at 2nd pass
-        return Ok(());
+    let atype = asn.eval_type.eval_type.clone();
+    let btype = bsn.eval_type.eval_type.clone();
+
+    let a_inf = atype == EvaluatedType::ToBeInferred;
+    let b_inf = btype == EvaluatedType::ToBeInferred;
+    // one or both migtd be "to be inferred"
+    if a_inf && b_inf {
+        return Ok(EvaluatedType::ToBeInferred);
+    } else if a_inf {
+        return Ok(btype);
+    } else if b_inf {
+        return Ok(atype);
     }
 
-    if asn.eval_type.eval_type != bsn.eval_type.eval_type {
+    let a_float = atype == EvaluatedType::FloatingNum;
+    let b_float = btype == EvaluatedType::FloatingNum;
+    // floating numbers
+    if a_float && btype.is_floating() {
+        return Ok(btype);
+    } else if b_float && atype.is_floating() {
+        return Ok(atype);
+    }
+
+    let a_int = atype == EvaluatedType::Integer;
+    let b_int = btype == EvaluatedType::Integer;
+    // integers
+    if a_int && btype.is_numeric() {
+        // TODO: decide if 8 & 16-bits types should be promoted to isize/usize
+        return Ok(btype);
+    } else if b_int && atype.is_numeric() {
+        return Ok(atype);
+    }
+
+    if atype != btype {
         // we need to emit a compiler error
         let err = ParsingError {
             msg: "leftside expression and righside expression must evaluate to the same type"
@@ -185,19 +226,25 @@ fn types_must_be_equal(
         };
         return Err(vec![err]);
     }
-    Ok(())
+    Ok(atype)
 }
 
-fn evaluate_logic_op<F>(a: &ast::Node, b: &ast::Node, op: F) -> Option<EvaluatedValue>
+fn evaluate_logic_op<F>(a: &SideNode, b: &SideNode, op: F) -> Option<EvaluatedValue>
 where
-    F: Fn(bool, bool) -> bool,
+    F: Fn(EvaluatedValue, EvaluatedValue) -> bool,
 {
-    return Some(EvaluatedValue::Bool(op(true, true)));
+    if a.eval_val.is_none() || b.eval_val.is_none() {
+        return None;
+    }
+    return Some(EvaluatedValue::Bool(op(
+        a.eval_val.clone().unwrap(),
+        b.eval_val.clone().unwrap(),
+    )));
 }
 
-struct SideNode {
-    eval_type: KfType,
-    eval_val: Option<EvaluatedValue>,
+pub struct SideNode {
+    pub eval_type: KfType,
+    pub eval_val: Option<EvaluatedValue>,
 }
 
 impl SideNode {
