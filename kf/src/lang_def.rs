@@ -288,6 +288,7 @@ pub struct TextPoint {
     pub col: usize,
 }
 
+#[derive(Debug)]
 pub struct ParsingError {
     pub msg: String,
     pub details: String,

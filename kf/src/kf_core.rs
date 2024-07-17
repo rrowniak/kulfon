@@ -39,6 +39,19 @@ impl InterRepr {
     }
 }
 
+macro_rules! calculate_operator {
+    ($left:expr, ==, $right:expr) => {
+        Some($left == $right)
+    };
+    ($left:expr, $op:tt, $right:expr) => {
+        match ($left, $right) {
+            (EvaluatedValue::Bool(lhs), EvaluatedValue::Bool(rhs)) => Some(lhs $op rhs),
+            (EvaluatedValue::Integer(lhs), EvaluatedValue::Integer(rhs)) => Some(lhs $op rhs),
+            _ => None,
+        }
+    };
+}
+
 fn eval_types(n: &mut ast::Node, s: &mut Vec<SideNode>) -> Result<(), Vec<ParsingError>> {
     match &mut n.val {
         // operators
@@ -50,12 +63,17 @@ fn eval_types(n: &mut ast::Node, s: &mut Vec<SideNode>) -> Result<(), Vec<Parsin
         ast::Ntype::Eq(a, b) => {
             eval_types(a.as_mut(), s)?;
             eval_types(b.as_mut(), s)?;
-            let t = determine_type_for_a_b(&a, &b, n.at, s)?;
-            let val = evaluate_logic_op(
-                get_side_node(&a, s).unwrap(),
-                get_side_node(&b, s).unwrap(),
-                |a, b| a == b,
+            let _t = determine_type_for_a_b(&a, &b, n.at, s)?;
+            let val = calculate_operator!(
+                get_side_node(&a, s).unwrap().eval_val.clone().unwrap(),
+                ==,
+                get_side_node(&b, s).unwrap().eval_val.clone().unwrap()
             );
+            let val = if let Some(v) = val {
+                Some(EvaluatedValue::Bool(v))
+            } else {
+                None
+            };
             set_type(
                 n,
                 s,
@@ -78,7 +96,9 @@ fn eval_types(n: &mut ast::Node, s: &mut Vec<SideNode>) -> Result<(), Vec<Parsin
         ast::Ntype::Bang(a) => {}
         ast::Ntype::UMinus(a) => {} // unary minu
         // assign
-        ast::Ntype::Assign(a, b) => {}
+        ast::Ntype::Assign(a, b) => {
+            eval_types(b.as_mut(), s)?;
+        }
         // control flow
         ast::Ntype::If(if_) => {}
         ast::Ntype::For(for_) => {}
@@ -87,10 +107,21 @@ fn eval_types(n: &mut ast::Node, s: &mut Vec<SideNode>) -> Result<(), Vec<Parsin
         ast::Ntype::Break => set_type(n, s, KfType::from_literal(EvaluatedType::Never), None),
         ast::Ntype::Continue => set_type(n, s, KfType::from_literal(EvaluatedType::Never), None),
         // higher level structures
-        ast::Ntype::Scope(a) => {}
-        ast::Ntype::FnDef(fndef) => {}
+        ast::Ntype::Scope(a) => {
+            for n in a {
+                eval_types(n, s)?;
+            }
+        }
+        ast::Ntype::FnDef(fndef) => {
+            eval_types(fndef.body.as_mut(), s)?;
+        }
         ast::Ntype::FnCall(name, args) => {}
-        ast::Ntype::VarDef(vardef) => {}
+        ast::Ntype::VarDef(vardef) => match &mut vardef.expr {
+            Some(expr) => {
+                eval_types(expr.as_mut(), s)?;
+            }
+            None => {}
+        },
         // terminals
         ast::Ntype::String(ss) => {
             let ss = ss.clone();
@@ -179,6 +210,8 @@ fn determine_type_for_a_b(
     let asn = get_side_node(a, side_nodes).expect("Side node should be calculated here!");
     let bsn = get_side_node(b, side_nodes).expect("Side node should be calculated here (2)");
 
+    println!("asn={:?}\nbsn={:?}", asn, bsn);
+
     // TODO: unfortunate names - figure out better namings
     let atype = asn.eval_type.eval_type.clone();
     let btype = bsn.eval_type.eval_type.clone();
@@ -229,34 +262,22 @@ fn determine_type_for_a_b(
     Ok(atype)
 }
 
-fn evaluate_logic_op<F>(a: &SideNode, b: &SideNode, op: F) -> Option<EvaluatedValue>
-where
-    F: Fn(EvaluatedValue, EvaluatedValue) -> bool,
-{
-    if a.eval_val.is_none() || b.eval_val.is_none() {
-        return None;
-    }
-    return Some(EvaluatedValue::Bool(op(
-        a.eval_val.clone().unwrap(),
-        b.eval_val.clone().unwrap(),
-    )));
-}
-
+#[derive(Debug)]
 pub struct SideNode {
     pub eval_type: KfType,
     pub eval_val: Option<EvaluatedValue>,
 }
 
 impl SideNode {
-    fn new() -> Self {
-        Self {
-            eval_type: KfType {
-                mutable: None,
-                eval_type: EvaluatedType::ToBeInferred,
-            },
-            eval_val: None,
-        }
-    }
+    // fn new() -> Self {
+    //     Self {
+    //         eval_type: KfType {
+    //             mutable: None,
+    //             eval_type: EvaluatedType::ToBeInferred,
+    //         },
+    //         eval_val: None,
+    //     }
+    // }
 }
 
 fn classify_literal(input: &str) -> (EvaluatedType, Option<EvaluatedValue>) {
@@ -319,4 +340,80 @@ fn classify_literal(input: &str) -> (EvaluatedType, Option<EvaluatedValue>) {
 
     // If none of the above, treat it as a literal
     (EvaluatedType::ToBeInferred, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lang_def::Lang;
+    use crate::lexer;
+    use crate::parser;
+
+    fn throw_errors(errs: Vec<ParsingError>) -> Result<(), String> {
+        if errs.len() == 0 {
+            Ok(())
+        } else {
+            let mut error = String::new();
+            for e in errs {
+                let msg = format!("Syntax error at {}, {}: {}", e.at.line, e.at.col, e.msg);
+                error.push_str(&msg);
+                error += "\n";
+            }
+            Err(error)
+        }
+    }
+
+    fn parse_code(code: &str) -> Result<ast::Node, String> {
+        let (tokens, errors) = lexer::tokenize(&Lang::new(), code);
+        throw_errors(errors)?;
+        let ast_tree = parser::parse(&tokens);
+        match ast_tree {
+            Ok(ast) => Ok(ast),
+            Err(errs) => {
+                let mut err_msg = String::new();
+                for e in errs {
+                    err_msg += code;
+                    err_msg += &format!("\n{}^\n", " ".repeat(e.at.col - 1));
+                    err_msg += &format!("Syntax error: {}", e.msg)
+                }
+                Err(err_msg)
+            }
+        }
+    }
+
+    #[test]
+    fn test_positive_cases() {
+        let tcs = ["let v = 1 + 2;"];
+        for c in tcs {
+            let ast = parse_code(c).unwrap();
+            let mut inter = InterRepr::from(ast);
+            match inter.compile() {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Parsing: {}", c);
+                    for e0 in e {
+                        println!("{:?}", e0);
+                    }
+                    assert!(false);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_negative_cases() {
+        let tcs = [r#"fn a(){1 == "s"; }"#, "let v = 1 == \"srt\";"];
+        for c in tcs {
+            let ast = parse_code(c).unwrap();
+            let mut inter = InterRepr::from(ast);
+            match inter.compile() {
+                Ok(_) => {
+                    println!("code: {c}");
+                    println!("ast: {:?}", inter.syntree);
+                    assert!(false);
+                }
+                Err(_) => {}
+            }
+        }
+    }
 }

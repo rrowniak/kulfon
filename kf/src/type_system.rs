@@ -61,6 +61,7 @@ impl EvaluatedType {
             "isize" => Some(Self::ISize),
             "char" => Some(Self::Char),
             "rune" => Some(Self::Rune),
+            "str" => Some(Self::String),
             "_" => Some(Self::ToBeInferred),
             _ => None,
         }
@@ -90,6 +91,7 @@ impl EvaluatedType {
     }
 }
 
+#[derive(Debug)]
 pub struct KfType {
     pub mutable: Option<bool>,
     pub eval_type: EvaluatedType,
@@ -131,4 +133,18 @@ pub enum EvaluatedValue {
     Char(char),
     Rune(i32),
     String(String),
+}
+
+impl EvaluatedValue {
+    pub fn try_to_i128(&self) -> Option<i128> {
+        match self {
+            Self::Integer(ev_int) => match ev_int.val {
+                Int::Signed(i) => Some(i),
+                Int::Unsigned(u) => Some(u as i128),
+            },
+            Self::Char(c) => Some(*c as i128),
+            Self::Rune(r) => Some(*r as i128),
+            Self::Bool(_) | Self::Floating(_) | Self::String(_) => None,
+        }
+    }
 }
