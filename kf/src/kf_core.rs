@@ -9,34 +9,34 @@ use crate::lang_def::ParsingError;
 use crate::lang_def::TextPoint;
 use crate::type_system::*;
 
-pub struct InterRepr {
-    pub syntree: ast::Node,
+pub struct Context {
     pub side_nodes: Vec<SideNode>,
 }
 
+pub struct InterRepr {
+    pub syntree: ast::Node,
+    pub ctx: Context,
+}
+
 impl InterRepr {
-    pub fn from(syntree: ast::Node) -> Self {
-        Self {
-            syntree,
+    pub fn from(mut syntree: ast::Node) -> Result<Self, Vec<ParsingError>> {
+        let mut ctx = Context {
             side_nodes: Vec::new(),
-        }
+        };
+        first_pass(&mut syntree, &mut ctx)?;
+        second_pass(&mut syntree, &mut ctx)?;
+        Ok(Self { syntree, ctx })
     }
+}
 
-    pub fn compile(&mut self) -> Result<(), Vec<ParsingError>> {
-        self.first_pass()?;
-        self.second_pass()?;
-        Ok(())
-    }
+fn first_pass(syntree: &mut ast::Node, ctx: &mut Context) -> Result<(), Vec<ParsingError>> {
+    // evaluate expression types
+    eval_types(syntree, ctx)?;
+    Ok(())
+}
 
-    fn first_pass(&mut self) -> Result<(), Vec<ParsingError>> {
-        // evaluate expression types
-        eval_types(&mut self.syntree, &mut self.side_nodes)?;
-        Ok(())
-    }
-
-    fn second_pass(&mut self) -> Result<(), Vec<ParsingError>> {
-        Ok(())
-    }
+fn second_pass(syntree: &mut ast::Node, ctx: &mut Context) -> Result<(), Vec<ParsingError>> {
+    Ok(())
 }
 
 macro_rules! calculate_operator {
@@ -52,7 +52,7 @@ macro_rules! calculate_operator {
     };
 }
 
-fn eval_types(n: &mut ast::Node, s: &mut Vec<SideNode>) -> Result<(), Vec<ParsingError>> {
+fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError>> {
     match &mut n.val {
         // operators
         // binary operators:
@@ -172,30 +172,25 @@ fn eval_types(n: &mut ast::Node, s: &mut Vec<SideNode>) -> Result<(), Vec<Parsin
     Ok(())
 }
 
-fn set_type(
-    n: &mut ast::Node,
-    side_nodes: &mut Vec<SideNode>,
-    t: KfType,
-    v: Option<EvaluatedValue>,
-) {
+fn set_type(n: &mut ast::Node, ctx: &mut Context, t: KfType, v: Option<EvaluatedValue>) {
     match n.meta_idx {
         Some(idx) => {
-            side_nodes[idx].eval_type = t;
-            side_nodes[idx].eval_val = v;
+            ctx.side_nodes[idx].eval_type = t;
+            ctx.side_nodes[idx].eval_val = v;
         }
         None => {
-            side_nodes.push(SideNode {
+            ctx.side_nodes.push(SideNode {
                 eval_type: t,
                 eval_val: v,
             });
-            n.meta_idx = Some(side_nodes.len() - 1);
+            n.meta_idx = Some(ctx.side_nodes.len() - 1);
         }
     }
 }
 
-fn get_side_node<'a>(n: &'a ast::Node, side_nodes: &'a [SideNode]) -> Option<&'a SideNode> {
+fn get_side_node<'a>(n: &'a ast::Node, ctx: &'a Context) -> Option<&'a SideNode> {
     if let Some(side_node) = n.meta_idx {
-        Some(&side_nodes[side_node])
+        Some(&ctx.side_nodes[side_node])
     } else {
         None
     }
@@ -205,10 +200,10 @@ fn determine_type_for_a_b(
     a: &ast::Node,
     b: &ast::Node,
     at: TextPoint,
-    side_nodes: &[SideNode],
+    ctx: &Context,
 ) -> Result<EvaluatedType, Vec<ParsingError>> {
-    let asn = get_side_node(a, side_nodes).expect("Side node should be calculated here!");
-    let bsn = get_side_node(b, side_nodes).expect("Side node should be calculated here (2)");
+    let asn = get_side_node(a, ctx).expect("Side node should be calculated here!");
+    let bsn = get_side_node(b, ctx).expect("Side node should be calculated here (2)");
 
     println!("asn={:?}\nbsn={:?}", asn, bsn);
 
@@ -266,18 +261,6 @@ fn determine_type_for_a_b(
 pub struct SideNode {
     pub eval_type: KfType,
     pub eval_val: Option<EvaluatedValue>,
-}
-
-impl SideNode {
-    // fn new() -> Self {
-    //     Self {
-    //         eval_type: KfType {
-    //             mutable: None,
-    //             eval_type: EvaluatedType::ToBeInferred,
-    //         },
-    //         eval_val: None,
-    //     }
-    // }
 }
 
 fn classify_literal(input: &str) -> (EvaluatedType, Option<EvaluatedValue>) {
@@ -386,8 +369,8 @@ mod tests {
         let tcs = ["let v = 1 + 2;"];
         for c in tcs {
             let ast = parse_code(c).unwrap();
-            let mut inter = InterRepr::from(ast);
-            match inter.compile() {
+            let inter = InterRepr::from(ast);
+            match inter {
                 Ok(_) => {}
                 Err(e) => {
                     println!("Parsing: {}", c);
@@ -405,11 +388,11 @@ mod tests {
         let tcs = [r#"fn a(){1 == "s"; }"#, "let v = 1 == \"srt\";"];
         for c in tcs {
             let ast = parse_code(c).unwrap();
-            let mut inter = InterRepr::from(ast);
-            match inter.compile() {
-                Ok(_) => {
+            let inter = InterRepr::from(ast);
+            match inter {
+                Ok(int) => {
                     println!("code: {c}");
-                    println!("ast: {:?}", inter.syntree);
+                    println!("ast: {:?}", int.syntree);
                     assert!(false);
                 }
                 Err(_) => {}

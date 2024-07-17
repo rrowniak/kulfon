@@ -34,11 +34,10 @@ pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Resu
         }
     };
 
-    let mut int_repr = kf_core::InterRepr::from(ast);
-
-    if let Err(e) = int_repr.compile() {
-        return Err(process_errors(&input_source, &e));
-    }
+    let int_repr = match kf_core::InterRepr::from(ast) {
+        Ok(int) => int,
+        Err(e) => return Err(process_errors(&input_source, &e)),
+    };
 
     let c_code = cbackend::gen_c_code(&int_repr)?;
 
