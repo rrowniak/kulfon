@@ -30,6 +30,7 @@ impl InterRepr {
 }
 
 fn first_pass(syntree: &mut ast::Node, ctx: &mut Context) -> Result<(), Vec<ParsingError>> {
+    // collect all function definitions
     // evaluate expression types
     eval_types(syntree, ctx)?;
     Ok(())
@@ -50,6 +51,33 @@ macro_rules! calculate_operator {
             _ => None,
         }
     };
+}
+
+macro_rules! handle_logic_op {
+    ($a:expr, $op:tt, $b:expr, $s:expr, $n:expr) => {{
+        eval_types($a.as_mut(), $s)?;
+        eval_types($b.as_mut(), $s)?;
+        let _t = determine_type_for_a_b(&$a, &$b, $n.at, $s)?;
+        let val = calculate_operator!(
+            get_side_node(&$a, $s).unwrap().eval_val.clone().unwrap(),
+            ==,
+            get_side_node(&$b, $s).unwrap().eval_val.clone().unwrap()
+        );
+        let val = if let Some(v) = val {
+            Some(EvaluatedValue::Bool(v))
+        } else {
+            None
+        };
+        set_type(
+            $n,
+            $s,
+            KfType {
+                mutable: Some(false),
+                eval_type: EvaluatedType::Bool,
+            },
+            val,
+        )
+    }}
 }
 
 fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError>> {
@@ -84,26 +112,207 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
                 val,
             )
         }
-        ast::Ntype::Neq(a, b) => {}
-        ast::Ntype::Gt(a, b) => {}
-        ast::Ntype::Ge(a, b) => {}
-        ast::Ntype::Lt(a, b) => {}
-        ast::Ntype::Le(a, b) => {}
-        ast::Ntype::Plus(a, b) => {}
-        ast::Ntype::Minus(a, b) => {}
-        ast::Ntype::Slash(a, b) => {}
-        ast::Ntype::Star(a, b) => {}
-        ast::Ntype::Bang(a) => {}
-        ast::Ntype::UMinus(a) => {} // unary minu
+        ast::Ntype::Neq(a, b) => {
+            handle_logic_op!(a, !=, b, s, n)
+        }
+        ast::Ntype::Gt(a, b) => {
+            validate_type_for_arithm_op(a, b, n.at, s)?;
+            set_type(
+                n,
+                s,
+                KfType {
+                    mutable: Some(false),
+                    eval_type: EvaluatedType::Bool,
+                },
+                None,
+            )
+        }
+        ast::Ntype::Ge(a, b) => {
+            validate_type_for_arithm_op(a, b, n.at, s)?;
+            set_type(
+                n,
+                s,
+                KfType {
+                    mutable: Some(false),
+                    eval_type: EvaluatedType::Bool,
+                },
+                None,
+            );
+        }
+        ast::Ntype::Lt(a, b) => {
+            validate_type_for_arithm_op(a, b, n.at, s)?;
+            set_type(
+                n,
+                s,
+                KfType {
+                    mutable: Some(false),
+                    eval_type: EvaluatedType::Bool,
+                },
+                None,
+            );
+        }
+        ast::Ntype::Le(a, b) => {
+            validate_type_for_arithm_op(a, b, n.at, s)?;
+            set_type(
+                n,
+                s,
+                KfType {
+                    mutable: Some(false),
+                    eval_type: EvaluatedType::Bool,
+                },
+                None,
+            );
+        }
+        ast::Ntype::Plus(a, b) => {
+            let eval_type = validate_type_for_arithm_op(a, b, n.at, s)?;
+            set_type(
+                n,
+                s,
+                KfType {
+                    mutable: Some(false),
+                    eval_type,
+                },
+                None,
+            );
+        }
+        ast::Ntype::Minus(a, b) => {
+            let eval_type = validate_type_for_arithm_op(a, b, n.at, s)?;
+            set_type(
+                n,
+                s,
+                KfType {
+                    mutable: Some(false),
+                    eval_type,
+                },
+                None,
+            );
+        }
+        ast::Ntype::Slash(a, b) => {
+            let eval_type = validate_type_for_arithm_op(a, b, n.at, s)?;
+            set_type(
+                n,
+                s,
+                KfType {
+                    mutable: Some(false),
+                    eval_type,
+                },
+                None,
+            );
+        }
+        ast::Ntype::Star(a, b) => {
+            let eval_type = validate_type_for_arithm_op(a, b, n.at, s)?;
+            set_type(
+                n,
+                s,
+                KfType {
+                    mutable: Some(false),
+                    eval_type,
+                },
+                None,
+            );
+        }
+        ast::Ntype::Bang(a) => {
+            eval_types(a.as_mut(), s)?;
+            let asn = get_side_node(a, s).expect("Side node should be calculated here");
+            let atype = asn.eval_type.eval_type.clone();
+            if atype != EvaluatedType::Bool {
+                let err = ParsingError {
+                    msg: "bang operator can be applied only to a boolean type".into(),
+                    details: format!("righside expression evaluates to {:?}", atype),
+                    at: n.at,
+                };
+                return Err(vec![err]);
+            }
+        }
+        ast::Ntype::UMinus(a) => {
+            eval_types(a.as_mut(), s)?;
+            let asn = get_side_node(a, s).expect("Side node should be calculated here");
+            let atype = asn.eval_type.eval_type.clone();
+            if !atype.is_numeric() && !atype.is_floating() {
+                let err = ParsingError {
+                    msg: "unary minus operator can be applied either to numeric of floating types"
+                        .into(),
+                    details: format!("righside expression evaluates to {:?}", atype),
+                    at: n.at,
+                };
+                return Err(vec![err]);
+            }
+        } // unary minus
         // assign
         ast::Ntype::Assign(a, b) => {
+            // TODO: a is a literal, lookup type and check if rhs == lhs
             eval_types(b.as_mut(), s)?;
         }
         // control flow
-        ast::Ntype::If(if_) => {}
-        ast::Ntype::For(for_) => {}
-        ast::Ntype::While(while_) => {}
-        ast::Ntype::Loop(loop_) => {}
+        ast::Ntype::If(if_) => {
+            let mut errors = Vec::new();
+            // condition must be bool
+            eval_types(if_.cond.as_mut(), s)?;
+            let asn = get_side_node(if_.cond.as_ref(), s).expect("Side node should be calculated");
+            let atype = asn.eval_type.eval_type.clone();
+            if atype != EvaluatedType::Bool {
+                let err = ParsingError {
+                    msg: "if expression should evaluate to boolean type".into(),
+                    details: format!("if expression evaluates to {:?}", atype),
+                    at: n.at,
+                };
+                errors.push(err);
+            }
+            // evaluate body
+            eval_types(if_.body.as_mut(), s)?;
+            // evaluate elif
+            for elif in if_.elif.iter_mut() {
+                eval_types(elif.cond.as_mut(), s)?;
+                let asn =
+                    get_side_node(elif.cond.as_ref(), s).expect("Side node should be calculated");
+                let atype = asn.eval_type.eval_type.clone();
+                if atype != EvaluatedType::Bool {
+                    let err = ParsingError {
+                        msg: "else if expression should evaluate to boolean type".into(),
+                        details: format!("if expression evaluates to {:?}", atype),
+                        at: n.at,
+                    };
+                    errors.push(err);
+                }
+                // body
+                eval_types(elif.body.as_mut(), s)?;
+            }
+            // evaluate else
+            if let Some(else_body) = &mut if_.else_body {
+                eval_types(else_body.as_mut(), s)?;
+            }
+            if errors.len() > 0 {
+                return Err(errors);
+            }
+        }
+        ast::Ntype::For(for_) => {
+            // TODO: handle matching patterns
+            eval_types(for_.in_expr.as_mut(), s)?;
+            eval_types(for_.body.as_mut(), s)?;
+        }
+        ast::Ntype::While(while_) => {
+            let mut errors = Vec::new();
+            eval_types(while_.cond.as_mut(), s)?;
+            let asn =
+                get_side_node(while_.cond.as_ref(), s).expect("Side node should be calculated");
+            let atype = asn.eval_type.eval_type.clone();
+            if atype != EvaluatedType::Bool {
+                let err = ParsingError {
+                    msg: "while expression should evaluate to boolean type".into(),
+                    details: format!("while expression evaluates to {:?}", atype),
+                    at: n.at,
+                };
+                errors.push(err);
+            }
+            // evaluate body
+            eval_types(while_.body.as_mut(), s)?;
+            if errors.len() > 0 {
+                return Err(errors);
+            }
+        }
+        ast::Ntype::Loop(loop_) => {
+            eval_types(loop_.body.as_mut(), s)?;
+        }
         ast::Ntype::Break => set_type(n, s, KfType::from_literal(EvaluatedType::Never), None),
         ast::Ntype::Continue => set_type(n, s, KfType::from_literal(EvaluatedType::Never), None),
         // higher level structures
@@ -115,7 +324,9 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
         ast::Ntype::FnDef(fndef) => {
             eval_types(fndef.body.as_mut(), s)?;
         }
-        ast::Ntype::FnCall(name, args) => {}
+        ast::Ntype::FnCall(name, args) => {
+            // TODO: implement function lookup
+        }
         ast::Ntype::VarDef(vardef) => match &mut vardef.expr {
             Some(expr) => {
                 eval_types(expr.as_mut(), s)?;
@@ -255,6 +466,25 @@ fn determine_type_for_a_b(
         return Err(vec![err]);
     }
     Ok(atype)
+}
+fn validate_type_for_arithm_op(
+    a: &mut ast::Node,
+    b: &mut ast::Node,
+    at: TextPoint,
+    ctx: &mut Context,
+) -> Result<EvaluatedType, Vec<ParsingError>> {
+    eval_types(a, ctx)?;
+    eval_types(b, ctx)?;
+    let t = determine_type_for_a_b(&a, &b, at, ctx)?;
+    if !t.is_numeric() && !t.is_floating() {
+        let err = ParsingError {
+            msg: "operator can be applied to either numeric or floating numbers".into(),
+            details: format!("leftside and rightside expressions evaluate to {:?}", t),
+            at,
+        };
+        return Err(vec![err]);
+    }
+    Ok(t)
 }
 
 #[derive(Debug)]

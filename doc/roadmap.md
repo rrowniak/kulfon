@@ -11,8 +11,9 @@
 - format string parsing
 
 ### Type system
-- checking types
+- [done] basic checking types
 - checking type conversion and correctness
+- functions calls
 - struct type checking
 - array type checking
 - enum type checking

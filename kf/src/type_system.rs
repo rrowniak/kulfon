@@ -85,9 +85,10 @@ impl EvaluatedType {
             || *self == Self::U128
             || *self == Self::ISize
             || *self == Self::USize
+            || *self == Self::Integer
     }
     pub fn is_floating(&self) -> bool {
-        *self == Self::F32 || *self == Self::F64
+        *self == Self::F32 || *self == Self::F64 || *self == Self::FloatingNum
     }
 }
 
