@@ -10,9 +10,65 @@ use crate::lang_def::TextPoint;
 use crate::type_system::*;
 use std::collections::HashMap;
 
+pub struct ScopeLog {
+    /// <variable name, type definition>
+    var_decl: HashMap<String, KfType>,
+    /// transient - can we go back and do a local variable lookup?
+    /// e.g. if this is a function call - we can't
+    /// e.g. if this ia a while loop - we can
+    transient: bool,
+}
+
 pub struct Context {
     pub side_nodes: Vec<SideNode>,
     pub glob_functs: HashMap<String, (Vec<ast::VarDecl>, ast::TypeDecl)>,
+    /// first position is a global scope with global variables and consts
+    pub temp_scope: Vec<ScopeLog>,
+}
+
+impl Context {
+    fn scope_push(&mut self, transient: bool) {
+        self.temp_scope.push(ScopeLog {
+            var_decl: HashMap::new(),
+            transient,
+        });
+    }
+
+    fn scope_peek(&mut self) -> &mut ScopeLog {
+        let indx = self.temp_scope.len() - 1;
+        self.temp_scope.get_mut(indx).unwrap()
+    }
+
+    fn scope_pop(&mut self) {
+        self.temp_scope.pop();
+    }
+
+    fn scope_push_var(&mut self, name: String, details: KfType) {
+        self.scope_peek().var_decl.insert(name, details);
+    }
+
+    fn scope_get_var(&mut self, name: &str) -> Option<KfType> {
+        // lookup scopes up to "non-transient" on
+        // lastly check the global scope
+        let mut indx = self.temp_scope.len() - 1;
+        while indx > 0 {
+            let scope = &self.temp_scope[indx];
+
+            if let Some(details) = scope.var_decl.get(name) {
+                return Some(details.clone());
+            }
+
+            if !scope.transient {
+                break;
+            }
+            indx -= 1;
+        }
+        if let Some(details) = self.temp_scope[0].var_decl.get(name) {
+            Some(details.clone())
+        } else {
+            None
+        }
+    }
 }
 
 pub struct InterRepr {
@@ -25,23 +81,15 @@ impl InterRepr {
         let mut ctx = Context {
             side_nodes: Vec::new(),
             glob_functs: HashMap::new(),
+            // add a global scope
+            temp_scope: Vec::new(),
         };
-        first_pass(&mut syntree, &mut ctx)?;
-        second_pass(&mut syntree, &mut ctx)?;
+        // collect all function definitions
+        collect_glob_functions(&mut syntree, &mut ctx)?;
+        // evaluate expression types
+        eval_types(&mut syntree, &mut ctx)?;
         Ok(Self { syntree, ctx })
     }
-}
-
-fn first_pass(syntree: &mut ast::Node, ctx: &mut Context) -> Result<(), Vec<ParsingError>> {
-    // collect all function definitions
-    collect_glob_functions(syntree, ctx)?;
-    // evaluate expression types
-    eval_types(syntree, ctx)?;
-    Ok(())
-}
-
-fn second_pass(syntree: &mut ast::Node, ctx: &mut Context) -> Result<(), Vec<ParsingError>> {
-    Ok(())
 }
 
 fn collect_glob_functions(
@@ -297,6 +345,22 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
         ast::Ntype::Assign(a, b) => {
             // TODO: a is a literal, lookup type and check if rhs == lhs
             eval_types(b.as_mut(), s)?;
+            if let Some(variable) = s.scope_get_var(a) {
+                if !variable.mutable.expect("Must be defined!") {
+                    return Err(vec![ParsingError {
+                        msg: "attempt to mutable non-mutable variable".into(),
+                        details: format!("variable >{a}< is defined as non-mutable"),
+                        at: n.at,
+                    }]);
+                }
+                // TODO: check types equality
+            } else {
+                return Err(vec![ParsingError {
+                    msg: "undeclared variable".into(),
+                    details: format!("variable >{a}< is not declared"),
+                    at: n.at,
+                }]);
+            }
             set_type_void(n, s);
         }
         // control flow
@@ -381,15 +445,19 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
         ast::Ntype::Continue => set_type(n, s, KfType::from_literal(EvaluatedType::Never), None),
         // higher level structures
         ast::Ntype::Scope(a) => {
+            s.scope_push(true);
             for n in a {
                 eval_types(n, s)?;
             }
 
             set_type_void(n, s);
+            s.scope_pop();
         }
         ast::Ntype::FnDef(fndef) => {
+            s.scope_push(false);
             eval_types(fndef.body.as_mut(), s)?;
             set_type_void(n, s);
+            s.scope_pop();
         }
         ast::Ntype::FnCall(name, args) => {
             // evaluate all expressions passed as arguments
@@ -478,6 +546,19 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
                 }
                 None => {}
             }
+            s.scope_push_var(
+                vardef.name.clone(),
+                KfType {
+                    mutable: Some(vardef.mutable),
+                    eval_type: match &vardef.vartype {
+                        Some(vd) => match EvaluatedType::from_str(&vd.typename) {
+                            Some(eval_t) => eval_t,
+                            None => EvaluatedType::ToBeInferred,
+                        },
+                        None => EvaluatedType::ToBeInferred,
+                    },
+                },
+            );
             set_type_void(n, s);
         }
         // terminals
@@ -492,6 +573,20 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
         }
         ast::Ntype::Literal(lit) => {
             let (t, v) = classify_literal(&lit);
+            // is it a variable name?
+            if t == EvaluatedType::ToBeInferred && v == None {
+                // check if a given variable was declared
+                if let Some(variable) = s.scope_get_var(&lit) {
+                    // TODO: and if so, check if the type is already determined
+                } else {
+                    // error
+                    return Err(vec![ParsingError {
+                        msg: "variable is not declared".into(),
+                        details: format!("variable >{lit}< is not declared"),
+                        at: n.at,
+                    }]);
+                }
+            }
             let mutable = if v.is_some() { Some(false) } else { None };
             set_type(
                 n,
@@ -769,6 +864,7 @@ mod tests {
             "fn a() {} fn b() { a(); }",
             "fn a() { a(); }",
             "fn a() { let b: i32 = 0; if b == 0 {}}",
+            "fn a() { let mut b: i32 = 0; if true {b = 1;}}",
         ];
         for c in tcs {
             let ast = parse_code(c).unwrap();
@@ -796,6 +892,7 @@ mod tests {
             "fn a() {} fn b() {aa();}",
             "fn a(i: i32) {} fn b() {a(1, true);}",
             "fn a(i: i32) {} fn b() {a(true);}",
+            "fn a() { let b: i32 = 0; if true {b = 1;}}",
         ];
         for c in tcs {
             let ast = parse_code(c).unwrap();

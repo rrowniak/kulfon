@@ -92,7 +92,7 @@ impl EvaluatedType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KfType {
     pub mutable: Option<bool>,
     pub eval_type: EvaluatedType,

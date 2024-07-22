@@ -6,14 +6,15 @@
 - structs (def + impl)
 - enums
 - arrays & slices
-- parsing matching
+- parsing matching patterns
 - missing operators
 - format string parsing
 
 ### Type system
 - [done] basic checking types
 - checking type conversion and correctness
-- functions calls
+- [done] functions calls
+- [done] variable definitions and mutability checks
 - struct type checking
 - array type checking
 - enum type checking
