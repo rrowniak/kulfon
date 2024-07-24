@@ -5,11 +5,13 @@
 // Created on: 15.06.2024
 // ---------------------------------------------------
 use crate::ast;
-use crate::lang_def::{KfTokKind, KfToken, ParsingError, TextPoint};
+use crate::comp_msg;
+use crate::comp_msg::TextPoint;
+use crate::lang_def::{KfTokKind, KfToken};
 use crate::lexer;
 use crate::parse_iter::ParseIter;
 
-type ParsingErrs = Vec<ParsingError>;
+type ParsingErrs = comp_msg::CompileMsgCol;
 type ParsingResult<T> = Result<T, ParsingErrs>;
 
 fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErrs) {
@@ -32,6 +34,7 @@ fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErr
             lexer::TokenKind::String => KfTokKind::LitString,
             lexer::TokenKind::Literal => KfTokKind::Literal,
             lexer::TokenKind::Character => KfTokKind::LitChar,
+            // TODO: Implement correct handling of comments, now they're just skipped
             // lexer::TokenKind::Comment => KfTokKind::Comment,
             lexer::TokenKind::Comment => continue,
         };
@@ -90,9 +93,9 @@ impl<'a> KfParser<'a> {
                     self.parse_var()
                 }
             }
-            t => {
+            _ => {
                 // error: unexpected symbol
-                panic!("Unexpected symbol: {:?}", t);
+                Err(vec![comp_msg::error_inv_statement_glob()])
             }
         }
     }
@@ -139,10 +142,9 @@ impl<'a> KfParser<'a> {
                 let type_dec = self.parse_type()?;
                 ret.push(ast::VarDecl { name, type_dec });
             } else {
-                return Err(error_from_token(
-                    self.get_curr()?,
-                    "Unexpected token while parsing function argument list",
-                ));
+                return Err(vec![comp_msg::error_arg_list_expected_coma_or_parenth(
+                    self.get_curr()?.at,
+                )]);
             }
         }
         Ok(ret)
@@ -299,11 +301,7 @@ impl<'a> KfParser<'a> {
             self.consume_tok(KfTokKind::SymParenthClose)?;
             return Ok(expr);
         }
-
-        Err(error_from_token(
-            t,
-            "Unexpected token while parsing expression",
-        ))
+        Err(vec![comp_msg::error_invalid_primary_expression(t.at)])
     }
 
     fn parse_fn_call(&mut self) -> ParsingResult<ast::Node> {
@@ -324,10 +322,9 @@ impl<'a> KfParser<'a> {
             if self.match_current_tok(KfTokKind::SymComma) {
                 ret.push(self.parse_expression()?);
             } else {
-                return Err(error_from_token(
-                    self.get_curr()?,
-                    "Unexpected token while parsing expression list",
-                ));
+                return Err(vec![comp_msg::error_expr_list_expected_coma_or_parenth(
+                    self.get_curr()?.at,
+                )]);
             }
         }
         Ok(ret)
@@ -339,10 +336,9 @@ impl<'a> KfParser<'a> {
             KfTokKind::KwFor => self.parse_for(),
             KfTokKind::KwWhile => self.parse_while(),
             KfTokKind::KwLoop => self.parse_loop(),
-            _ => Err(error_from_token(
-                self.get_curr()?,
-                "Unexpected token while parsing control flow",
-            )),
+            _ => Err(vec![comp_msg::error_expected_ctrl_flow(
+                self.get_curr()?.at,
+            )]),
         }
     }
 
@@ -496,8 +492,7 @@ impl<'a> KfParser<'a> {
                     self.iter.next();
                     return Ok(at);
                 } else {
-                    let msg = format!("Expected {:?}, got {:?}", kind, t);
-                    return Err(error_from_token(t, &msg));
+                    return Err(vec![comp_msg::error_unexpected_token(&kind, &t)]);
                 }
             }
             None => return Err(error_eof()),
@@ -549,8 +544,7 @@ impl<'a> KfParser<'a> {
                     self.iter.next();
                     return Ok(t.text.clone());
                 } else {
-                    let msg = format!("Expected literal, got {:?}", t.kind);
-                    return Err(error_from_token(t, &msg));
+                    return Err(vec![comp_msg::error_expected_literal(&t)]);
                 }
             }
             None => return Err(error_eof()),
@@ -558,20 +552,8 @@ impl<'a> KfParser<'a> {
     }
 }
 
-fn error_from_token(t: &KfToken, msg: &str) -> ParsingErrs {
-    vec![ParsingError {
-        msg: format!("{}", msg),
-        details: format!("Token {:?}", t),
-        at: t.at,
-    }]
-}
-
-fn error_eof() -> ParsingErrs {
-    vec![ParsingError {
-        msg: "Unexpected end of file".into(),
-        details: String::new(),
-        at: TextPoint { line: 0, col: 0 },
-    }]
+fn error_eof() -> comp_msg::CompileMsgCol {
+    vec![comp_msg::error_eof_generic()]
 }
 
 #[cfg(test)]
@@ -585,7 +567,8 @@ mod tests {
         } else {
             let mut error = String::new();
             for e in errs {
-                let msg = format!("Syntax error at {}, {}: {}", e.at.line, e.at.col, e.msg);
+                let at = e.at.unwrap_or(TextPoint { line: 0, col: 0 });
+                let msg = format!("Syntax error at {}, {}: {}", at.line, at.col, e.msg);
                 error.push_str(&msg);
                 error += "\n";
             }
@@ -606,8 +589,9 @@ mod tests {
             Err(errs) => {
                 let mut err_msg = String::new();
                 for e in errs {
+                    let at = e.at.unwrap_or(TextPoint { line: 0, col: 1 });
                     err_msg += code;
-                    err_msg += &format!("\n{}^\n", " ".repeat(e.at.col - 1));
+                    err_msg += &format!("\n{}^\n", " ".repeat(at.col - 1));
                     err_msg += &format!("Syntax error: {}", e.msg)
                 }
                 return Err(err_msg);

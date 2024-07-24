@@ -5,10 +5,11 @@
 // Created on: 25.06.2024
 // ---------------------------------------------------
 use crate::cbackend;
+use crate::comp_msg;
+use crate::kf_core;
 use crate::lang_def;
 use crate::lexer;
 use crate::parser;
-use crate::kf_core;
 
 pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Result<(), String> {
     let kulfon_lang = lang_def::Lang::new();
@@ -51,24 +52,27 @@ pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Resu
     Ok(())
 }
 
-fn process_errors(code: &str, errors: &Vec<lang_def::ParsingError>) -> String {
+fn process_errors(code: &str, errors: &comp_msg::CompileMsgCol) -> String {
     let lines = code.lines().collect::<Vec<&str>>();
     let mut err_log = String::new();
     for e in errors {
-        if e.at.line > 0 && e.at.line <= lines.len() {
-            let l = lines[e.at.line - 1];
-            err_log += l;
-            err_log += "\n";
+        if let Some(at) = e.at {
+            if at.line > 0 && at.line <= lines.len() {
+                let l = lines[at.line - 1];
+                err_log += l;
+                err_log += "\n";
 
-            let mut arrow = String::new();
-            if e.at.col > 0 {
-                arrow += &" ".repeat(e.at.col - 1);
+                let mut arrow = String::new();
+                if at.col > 0 {
+                    arrow += &" ".repeat(at.col - 1);
+                }
+                arrow += "^\n";
+                err_log += &arrow;
             }
-            arrow += "^\n";
-            err_log += &arrow;
+            err_log += &format!("error: {} <source>:{}:{}\n", e.msg, at.line, at.col);
+        } else {
+            err_log += &format!("error: {}\n", e.msg);
         }
-        let msg = format!("error: {} <source>:{}:{}\n", e.msg, e.at.line, e.at.col);
-        err_log += &msg;
         if e.details.len() > 0 {
             err_log += &format!("details: {}\n", e.details);
         }

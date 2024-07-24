@@ -4,7 +4,7 @@
 // License: Read LICENSE file
 // Created on: 15.06.2024
 // ---------------------------------------------------
-use crate::lang_def::TextPoint;
+use crate::comp_msg::TextPoint;
 
 #[derive(Debug, Clone)]
 pub struct Fun {

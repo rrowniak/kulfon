@@ -8,6 +8,7 @@
 mod ast;
 mod cbackend;
 mod compiler;
+mod comp_msg;
 mod lang_def;
 mod lexer;
 mod kf_core;

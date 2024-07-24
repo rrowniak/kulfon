@@ -5,8 +5,8 @@
 // Created on: 04.07.2024
 // ---------------------------------------------------
 use crate::ast;
-use crate::lang_def::ParsingError;
-use crate::lang_def::TextPoint;
+use crate::comp_msg;
+use crate::comp_msg::{CompileMsgCol, TextPoint};
 use crate::type_system::*;
 use std::collections::HashMap;
 
@@ -77,7 +77,7 @@ pub struct InterRepr {
 }
 
 impl InterRepr {
-    pub fn from(mut syntree: ast::Node) -> Result<Self, Vec<ParsingError>> {
+    pub fn from(mut syntree: ast::Node) -> Result<Self, CompileMsgCol> {
         let mut ctx = Context {
             side_nodes: Vec::new(),
             glob_functs: HashMap::new(),
@@ -92,10 +92,7 @@ impl InterRepr {
     }
 }
 
-fn collect_glob_functions(
-    syntree: &mut ast::Node,
-    ctx: &mut Context,
-) -> Result<(), Vec<ParsingError>> {
+fn collect_glob_functions(syntree: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol> {
     let mut errors = Vec::new();
     match &mut syntree.val {
         ast::Ntype::Scope(scope) => {
@@ -112,12 +109,9 @@ fn collect_glob_functions(
             } = fndef;
             // check if the name is correct
             if let Some(c) = name.chars().next() {
+                // TODO: Add '_' to the exception list
                 if !c.is_ascii_alphabetic() {
-                    errors.push(ParsingError {
-                        msg: "function name should start with alphabetic ascii character".into(),
-                        details: format!("first character >{c}< is not allowed in function name"),
-                        at: syntree.at,
-                    });
+                    errors.push(comp_msg::error_inv_var_fn_name(syntree.at));
                 }
             }
             if !ctx
@@ -126,11 +120,7 @@ fn collect_glob_functions(
                 .is_none()
             {
                 // collision - this function already defined
-                errors.push(ParsingError {
-                    msg: "function with this name already defined".into(),
-                    details: "function name should be unique across module scope".into(),
-                    at: syntree.at,
-                })
+                errors.push(comp_msg::error_fn_name_in_use(syntree.at));
             }
         }
         _ => {}
@@ -182,7 +172,7 @@ macro_rules! handle_logic_op {
     }}
 }
 
-fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError>> {
+fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), CompileMsgCol> {
     match &mut n.val {
         // operators
         // binary operators:
@@ -319,47 +309,28 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
             let asn = get_side_node(a, s).expect("Side node should be calculated here");
             let atype = asn.eval_type.eval_type.clone();
             if atype != EvaluatedType::Bool {
-                let err = ParsingError {
-                    msg: "bang operator can be applied only to a boolean type".into(),
-                    details: format!("righside expression evaluates to {:?}", atype),
-                    at: n.at,
-                };
-                return Err(vec![err]);
+                return Err(vec![comp_msg::error_bool_type_expected(n.at, atype)]);
             }
         }
         ast::Ntype::UMinus(a) => {
+            // unary minus
             eval_types(a.as_mut(), s)?;
             let asn = get_side_node(a, s).expect("Side node should be calculated here");
             let atype = asn.eval_type.eval_type.clone();
             if !atype.is_numeric() && !atype.is_floating() {
-                let err = ParsingError {
-                    msg: "unary minus operator can be applied either to numeric of floating types"
-                        .into(),
-                    details: format!("righside expression evaluates to {:?}", atype),
-                    at: n.at,
-                };
-                return Err(vec![err]);
+                return Err(vec![comp_msg::error_numeric_type_expected(n.at, atype)]);
             }
-        } // unary minus
+        }
         // assign
         ast::Ntype::Assign(a, b) => {
-            // TODO: a is a literal, lookup type and check if rhs == lhs
             eval_types(b.as_mut(), s)?;
             if let Some(variable) = s.scope_get_var(a) {
                 if !variable.mutable.expect("Must be defined!") {
-                    return Err(vec![ParsingError {
-                        msg: "attempt to mutable non-mutable variable".into(),
-                        details: format!("variable >{a}< is defined as non-mutable"),
-                        at: n.at,
-                    }]);
+                    return Err(vec![comp_msg::error_assign_to_immutable(n.at)]);
                 }
                 // TODO: check types equality
             } else {
-                return Err(vec![ParsingError {
-                    msg: "undeclared variable".into(),
-                    details: format!("variable >{a}< is not declared"),
-                    at: n.at,
-                }]);
+                return Err(vec![comp_msg::error_undeclared_var(n.at)]);
             }
             set_type_void(n, s);
         }
@@ -371,12 +342,7 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
             let asn = get_side_node(if_.cond.as_ref(), s).expect("Side node should be calculated");
             let atype = asn.eval_type.eval_type.clone();
             if atype != EvaluatedType::Bool {
-                let err = ParsingError {
-                    msg: "if expression should evaluate to boolean type".into(),
-                    details: format!("if expression evaluates to {:?}", atype),
-                    at: n.at,
-                };
-                errors.push(err);
+                errors.push(comp_msg::error_condition_must_be_bool(n.at, "if", atype));
             }
             // evaluate body
             eval_types(if_.body.as_mut(), s)?;
@@ -387,12 +353,9 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
                     get_side_node(elif.cond.as_ref(), s).expect("Side node should be calculated");
                 let atype = asn.eval_type.eval_type.clone();
                 if atype != EvaluatedType::Bool {
-                    let err = ParsingError {
-                        msg: "else if expression should evaluate to boolean type".into(),
-                        details: format!("if expression evaluates to {:?}", atype),
-                        at: n.at,
-                    };
-                    errors.push(err);
+                    errors.push(comp_msg::error_condition_must_be_bool(
+                        n.at, "else if", atype,
+                    ));
                 }
                 // body
                 eval_types(elif.body.as_mut(), s)?;
@@ -421,12 +384,7 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
                 get_side_node(while_.cond.as_ref(), s).expect("Side node should be calculated");
             let atype = asn.eval_type.eval_type.clone();
             if atype != EvaluatedType::Bool {
-                let err = ParsingError {
-                    msg: "while expression should evaluate to boolean type".into(),
-                    details: format!("while expression evaluates to {:?}", atype),
-                    at: n.at,
-                };
-                errors.push(err);
+                errors.push(comp_msg::error_condition_must_be_bool(n.at, "while", atype));
             }
             // evaluate body
             eval_types(while_.body.as_mut(), s)?;
@@ -470,11 +428,9 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
                 if args.len() != args_def.len() {
                     let passed = args.len();
                     let expected = args_def.len();
-                    errors.push(ParsingError {
-                        msg: "incorrect arguments passed".into(),
-                        details: format!("passed {passed} arguments, expected: {expected}"),
-                        at: n.at,
-                    });
+                    errors.push(comp_msg::error_fn_call_incorrect_no_args(
+                        n.at, passed, expected,
+                    ));
                 }
                 for (arg, arg_def) in args.iter().zip(args_def) {
                     let arg_type = &get_side_node(arg, s)
@@ -484,21 +440,16 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
                     let arg_type_dec = EvaluatedType::from_str(&arg_def.type_dec.typename);
                     if let Some(arg_type_dec) = arg_type_dec {
                         if *arg_type != arg_type_dec {
-                            // error
-                            errors.push(ParsingError {
-                                msg: "argument type mismatch".into(),
-                                details: format!("expected {arg_type_dec:?} but the expression evaluates to {arg_type:?}"),
-                                at: arg.at,
-                            });
+                            errors.push(comp_msg::error_fn_call_arg_mismatch(
+                                arg.at,
+                                arg_type.clone(),
+                                arg_type_dec,
+                            ));
                         }
                     } else {
                         // TODO: not the best place for reporting this error
                         let t = arg_def.type_dec.typename.clone();
-                        errors.push(ParsingError {
-                            msg: "type not recognised".into(),
-                            details: format!("type >{t}< is not defined"),
-                            at: arg.at,
-                        });
+                        errors.push(comp_msg::error_unrecognised_type(arg.at, &t));
                     }
                 }
                 // set return type
@@ -518,25 +469,15 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
                         None,
                     );
                 } else {
-                    // TODO: not the best place for reporting this error
+                    // TODO: not the best place for reporting return value type issues
                     let t = ret_def.typename.clone();
-                    errors.push(ParsingError {
-                        msg: "function return value type not recognised".into(),
-                        details: format!("unknown type >{t}<"),
-                        at: n.at,
-                    });
+                    errors.push(comp_msg::error_unrecognised_type(n.at, &t));
                 }
                 if errors.len() > 0 {
                     return Err(errors);
                 }
             } else {
-                return Err(vec![ParsingError {
-                    msg: "function is not defined".into(),
-                    details: format!(
-                        "function >{name}< is not defined, check if you've made a typo"
-                    ),
-                    at: n.at,
-                }]);
+                return Err(vec![comp_msg::error_undefined_function(n.at, name)]);
             }
         }
         ast::Ntype::VarDef(vardef) => {
@@ -576,15 +517,11 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), Vec<ParsingError
             // is it a variable name?
             if t == EvaluatedType::ToBeInferred && v == None {
                 // check if a given variable was declared
-                if let Some(variable) = s.scope_get_var(&lit) {
+                if let Some(_variable) = s.scope_get_var(&lit) {
                     // TODO: and if so, check if the type is already determined
                 } else {
                     // error
-                    return Err(vec![ParsingError {
-                        msg: "variable is not declared".into(),
-                        details: format!("variable >{lit}< is not declared"),
-                        at: n.at,
-                    }]);
+                    return Err(vec![comp_msg::error_undeclared_var(n.at)]);
                 }
             }
             let mutable = if v.is_some() { Some(false) } else { None };
@@ -674,7 +611,7 @@ fn determine_type_for_a_b(
     b: &ast::Node,
     at: TextPoint,
     ctx: &Context,
-) -> Result<EvaluatedType, Vec<ParsingError>> {
+) -> Result<EvaluatedType, CompileMsgCol> {
     let asn = get_side_node(a, ctx).expect("Side node should be calculated here!");
     let bsn = get_side_node(b, ctx).expect("Side node should be calculated here (2)");
 
@@ -715,17 +652,9 @@ fn determine_type_for_a_b(
     }
 
     if atype != btype {
-        // we need to emit a compiler error
-        let err = ParsingError {
-            msg: "leftside expression and righside expression must evaluate to the same type"
-                .into(),
-            details: format!(
-                "leftside expression evaluates to {:?} while righside expression evaluates to {:?}",
-                asn.eval_type.eval_type, bsn.eval_type.eval_type
-            ),
-            at,
-        };
-        return Err(vec![err]);
+        return Err(vec![comp_msg::error_type_mismatch_for_bin_op(
+            at, atype, btype,
+        )]);
     }
     Ok(atype)
 }
@@ -734,17 +663,16 @@ fn validate_type_for_arithm_op(
     b: &mut ast::Node,
     at: TextPoint,
     ctx: &mut Context,
-) -> Result<EvaluatedType, Vec<ParsingError>> {
+) -> Result<EvaluatedType, CompileMsgCol> {
     eval_types(a, ctx)?;
     eval_types(b, ctx)?;
     let t = determine_type_for_a_b(&a, &b, at, ctx)?;
     if !t.is_numeric() && !t.is_floating() {
-        let err = ParsingError {
-            msg: "operator can be applied to either numeric or floating numbers".into(),
-            details: format!("leftside and rightside expressions evaluate to {:?}", t),
+        return Err(vec![comp_msg::error_numeric_type_for_bin_op(
             at,
-        };
-        return Err(vec![err]);
+            t.clone(),
+            t,
+        )]);
     }
     Ok(t)
 }
@@ -824,13 +752,14 @@ mod tests {
     use crate::lexer;
     use crate::parser;
 
-    fn throw_errors(errs: Vec<ParsingError>) -> Result<(), String> {
+    fn throw_errors(errs: CompileMsgCol) -> Result<(), String> {
         if errs.len() == 0 {
             Ok(())
         } else {
             let mut error = String::new();
             for e in errs {
-                let msg = format!("Syntax error at {}, {}: {}", e.at.line, e.at.col, e.msg);
+                let at = e.at.unwrap_or(TextPoint { line: 0, col: 0 });
+                let msg = format!("Syntax error at {}, {}: {}", at.line, at.col, e.msg);
                 error.push_str(&msg);
                 error += "\n";
             }
@@ -847,8 +776,9 @@ mod tests {
             Err(errs) => {
                 let mut err_msg = String::new();
                 for e in errs {
+                    let at = e.at.unwrap_or(TextPoint { line: 0, col: 1 });
                     err_msg += code;
-                    err_msg += &format!("\n{}^\n", " ".repeat(e.at.col - 1));
+                    err_msg += &format!("\n{}^\n", " ".repeat(at.col - 1));
                     err_msg += &format!("Syntax error: {}", e.msg)
                 }
                 Err(err_msg)

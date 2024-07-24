@@ -5,22 +5,19 @@
 // Created on: 04.06.2024
 // ---------------------------------------------------
 
-use crate::lang_def::{Lang, ParsingError, RangeBased, TextPoint};
+use crate::lang_def::{Lang, RangeBased};
+use crate::comp_msg::{TextPoint, CompileMsgCol};
+use crate::comp_msg;
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
 pub enum TokenKind {
     Keyword,
-    // Identifier,
     Literal,
     Symbol,
-    // Operator,
-    // Separator,
-    // Number,
     String,
     Character,
     Comment,
-    // NewLine,
 }
 
 impl fmt::Display for TokenKind {
@@ -52,7 +49,7 @@ impl fmt::Display for Token {
         write!(f, "']")
     }
 }
-pub fn tokenize(lang: &Lang, code: &str) -> (Vec<Token>, Vec<ParsingError>) {
+pub fn tokenize(lang: &Lang, code: &str) -> (Vec<Token>, CompileMsgCol) {
     Tokenizer::new(lang, code).tokenize()
 }
 
@@ -120,9 +117,9 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn tokenize(&mut self) -> (Vec<Token>, Vec<ParsingError>) {
+    fn tokenize(&mut self) -> (Vec<Token>, CompileMsgCol) {
         let mut tokens: Vec<Token> = Vec::new();
-        let mut errors: Vec<ParsingError> = Vec::new();
+        let mut errors  = CompileMsgCol::new(); 
 
         let mut start_point = TextPoint { line: 1, col: 1 };
         let mut start_pos = 0;
@@ -137,7 +134,7 @@ impl<'a> Tokenizer<'a> {
                     }
                     if !c.is_ascii() {
                         // non-ascii character not expected here
-                        errors.push(self.error_non_ascii());
+                        errors.push(comp_msg::error_non_ascii(self.curr_point));
                         continue;
                     }
                     let mut found = false;
@@ -187,7 +184,7 @@ impl<'a> Tokenizer<'a> {
                             // There is one edge case which is not handled here: 'a<EOF>.
                             // But this is a theoretical case which might be relevant to Rust.
                             // Kulfon lang shouldn't be affected
-                            errors.push(self.error_eof("Character literal should be closed"));
+                            errors.push(comp_msg::error_eof_unterminated_char());
                             continue;
                         }
 
@@ -212,18 +209,14 @@ impl<'a> Tokenizer<'a> {
                                     }
                                 } else {
                                     errors
-                                        .push(self.error_eof("Character literal should be closed"));
+                                        .push(comp_msg::error_eof_unterminated_char());
                                 }
                             }
                         }
                         // if we're here, there are two options: >'< is a symbol or we have
                         // parsing error
                         if !self.lang.special_sym.contains(&"'".to_string()) {
-                            errors.push(ParsingError {
-                                msg: "Syntax error while parsing character literal".into(),
-                                details: "Expected formats either like 'a' or '\n'".into(),
-                                at: self.curr_point,
-                            })
+                            errors.push(comp_msg::error_invalid_char(self.curr_point));
                         }
                     }
                     // special symbol?
@@ -329,11 +322,7 @@ impl<'a> Tokenizer<'a> {
                         end: self.curr_point,
                     });
                 } else {
-                    errors.push(ParsingError {
-                        msg: "Unexpected end of file".to_string(),
-                        details: "String or comment needs to be terminated".to_string(),
-                        at: self.curr_point,
-                    });
+                    errors.push(comp_msg::error_eof_unterminated_string(self.curr_point));
                 }
             }
         }
@@ -353,22 +342,6 @@ impl<'a> Tokenizer<'a> {
             nth.chars().next()
         } else {
             None
-        }
-    }
-
-    fn error_non_ascii(&self) -> ParsingError {
-        ParsingError {
-            msg: "Unexpected non-ASCII character".to_string(),
-            details: "Non-ASCII characters allowed in strings or comments only".to_string(),
-            at: self.curr_point,
-        }
-    }
-
-    fn error_eof(&self, details: &str) -> ParsingError {
-        ParsingError {
-            msg: "Unexpected end of file".to_string(),
-            details: details.to_string(),
-            at: self.curr_point,
         }
     }
 

@@ -4,6 +4,7 @@
 // License: Read LICENSE file
 // Created on: 04.06.2024
 // ---------------------------------------------------
+use crate::comp_msg::TextPoint;
 
 #[rustfmt::skip]
 const RUST_KEYWORDS: &[&str] = &[
@@ -282,15 +283,3 @@ impl Lang {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct TextPoint {
-    pub line: usize,
-    pub col: usize,
-}
-
-#[derive(Debug)]
-pub struct ParsingError {
-    pub msg: String,
-    pub details: String,
-    pub at: TextPoint,
-}
