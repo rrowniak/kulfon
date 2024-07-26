@@ -437,7 +437,9 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), CompileMsgCol> {
                         .expect("Side node should be calculated here")
                         .eval_type
                         .eval_type;
-                    let arg_type_dec = EvaluatedType::from_str(&arg_def.type_dec.typename);
+                    // TODO:
+                    let arg_type_dec =
+                        EvaluatedType::from_str(&arg_def.type_dec.typename().unwrap());
                     if let Some(arg_type_dec) = arg_type_dec {
                         if *arg_type != arg_type_dec {
                             errors.push(comp_msg::error_fn_call_arg_mismatch(
@@ -448,15 +450,18 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), CompileMsgCol> {
                         }
                     } else {
                         // TODO: not the best place for reporting this error
-                        let t = arg_def.type_dec.typename.clone();
+                        // TODO:
+                        let t = arg_def.type_dec.typename().unwrap().clone();
                         errors.push(comp_msg::error_unrecognised_type(arg.at, &t));
                     }
                 }
                 // set return type
-                let ret_type = if ret_def.typename.len() == 0 {
+                // TODO:
+                let ret_type = if ret_def.typename().unwrap().len() == 0 {
                     Some(EvaluatedType::Void)
                 } else {
-                    EvaluatedType::from_str(&ret_def.typename)
+                    // TODO:
+                    EvaluatedType::from_str(&ret_def.typename().unwrap())
                 };
                 if let Some(ret_type) = ret_type {
                     set_type(
@@ -470,7 +475,8 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), CompileMsgCol> {
                     );
                 } else {
                     // TODO: not the best place for reporting return value type issues
-                    let t = ret_def.typename.clone();
+                    // TODO:
+                    let t = ret_def.typename().unwrap().clone();
                     errors.push(comp_msg::error_unrecognised_type(n.at, &t));
                 }
                 if errors.len() > 0 {
@@ -492,7 +498,8 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), CompileMsgCol> {
                 KfType {
                     mutable: Some(vardef.mutable),
                     eval_type: match &vardef.vartype {
-                        Some(vd) => match EvaluatedType::from_str(&vd.typename) {
+                        // TODO:
+                        Some(vd) => match EvaluatedType::from_str(&vd.typename().unwrap()) {
                             Some(eval_t) => eval_t,
                             None => EvaluatedType::ToBeInferred,
                         },

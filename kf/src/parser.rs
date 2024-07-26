@@ -111,9 +111,7 @@ impl<'a> KfParser<'a> {
             self.consume_tok(KfTokKind::SymArrow)?;
             self.parse_type()?
         } else {
-            ast::TypeDecl {
-                typename: String::new(),
-            }
+            ast::TypeDecl::new(String::new())
         };
         let body = self.parse_scope()?;
         Ok(ast::Node::new(
@@ -151,8 +149,94 @@ impl<'a> KfParser<'a> {
     }
 
     fn parse_type(&mut self) -> ParsingResult<ast::TypeDecl> {
-        let typename = self.consume_name_literal()?;
-        Ok(ast::TypeDecl { typename })
+        // optimization - instead of calling recursively parse_type
+        // for each '&', just loop over all '&' '& mut' and
+        // get them out
+        let mut scope_res_relative = true;
+        let mut scope_resolution = Vec::new();
+        let mut reference_stack = Vec::new();
+        loop {
+            if self.match_current_tok(KfTokKind::OpAnd) {
+                // double ampersands are lexed as 'and' logic operator
+                // && or && mut case
+                reference_stack.push(ast::RefType::Borrow);
+                let ref_type = if self.match_current_tok(KfTokKind::KwMut) {
+                    ast::RefType::BorrowMut
+                } else {
+                    ast::RefType::Borrow
+                };
+                reference_stack.push(ref_type);
+            } else if self.match_current_tok(KfTokKind::SymAmpersand) {
+                let ref_type = if self.match_current_tok(KfTokKind::KwMut) {
+                    ast::RefType::BorrowMut
+                } else {
+                    ast::RefType::Borrow
+                };
+                reference_stack.push(ref_type);
+            } else {
+                break;
+            }
+        }
+        if self.match_current_tok(KfTokKind::SymBracketOpen) {
+            // parse either array or slice
+            // TODO: below call might fail, handle this error here and add
+            // a context like: parsing array error: {}
+            let array_type = self.parse_type()?;
+            let type_result = if self.match_current_tok(KfTokKind::SymSemi) {
+                // this is an array definition
+                let expr = self.parse_expression()?;
+                Ok(ast::TypeDecl {
+                    reference_stack,
+                    scope_res_relative,
+                    scope_resolution,
+                    type_id: ast::TypeKind::Array(Box::new(array_type), Some(Box::new(expr))),
+                })
+            } else {
+                Ok(ast::TypeDecl {
+                    reference_stack,
+                    scope_res_relative,
+                    scope_resolution,
+                    type_id: ast::TypeKind::Slice(Box::new(array_type)),
+                })
+            };
+            self.consume_tok(KfTokKind::SymBracketClose)?;
+            return type_result;
+        } else {
+            // there must be a typename
+            if self.match_current_tok(KfTokKind::SymScopeResolution) {
+                scope_res_relative = false;
+            }
+            let literal = loop {
+                let literal = self.consume_name_literal()?;
+                if self.match_current_tok(KfTokKind::SymScopeResolution) {
+                    scope_resolution.push(literal);
+                } else {
+                    break literal;
+                }
+            };
+            let mut generic_types = Vec::new();
+            if self.match_current_tok(KfTokKind::OpLt) {
+                while !self.match_current_tok(KfTokKind::OpGt) {
+                    generic_types.push(self.parse_type()?);
+                    self.match_current_tok(KfTokKind::SymComma);
+                }
+            }
+            if generic_types.len() > 0 {
+                Ok(ast::TypeDecl {
+                    reference_stack,
+                    scope_res_relative,
+                    scope_resolution,
+                    type_id: ast::TypeKind::JustNameGeneric(literal, generic_types),
+                })
+            } else {
+                Ok(ast::TypeDecl {
+                    reference_stack,
+                    scope_res_relative,
+                    scope_resolution,
+                    type_id: ast::TypeKind::JustName(literal),
+                })
+            }
+        }
     }
 
     fn parse_scope(&mut self) -> ParsingResult<ast::Node> {
@@ -414,9 +498,8 @@ impl<'a> KfParser<'a> {
         let at = self.consume_tok(KfTokKind::KwLet)?;
         let name = self.consume_name_literal()?;
         let vartype = if self.match_current_tok(KfTokKind::SymColon) {
-            Some(ast::TypeDecl {
-                typename: self.consume_name_literal()?,
-            })
+            // Some(ast::TypeDecl::new(self.consume_name_literal()?))
+            Some(self.parse_type()?)
         } else {
             None
         };
@@ -442,9 +525,7 @@ impl<'a> KfParser<'a> {
         self.consume_tok(KfTokKind::KwMut)?;
         let name = self.consume_name_literal()?;
         let vartype = if self.match_current_tok(KfTokKind::SymColon) {
-            Some(ast::TypeDecl {
-                typename: self.consume_name_literal()?,
-            })
+            Some(ast::TypeDecl::new(self.consume_name_literal()?))
         } else {
             None
         };
@@ -592,7 +673,9 @@ mod tests {
                     let at = e.at.unwrap_or(TextPoint { line: 0, col: 1 });
                     err_msg += code;
                     err_msg += &format!("\n{}^\n", " ".repeat(at.col - 1));
-                    err_msg += &format!("Syntax error: {}", e.msg)
+                    err_msg += &format!("Syntax error: {}\n", e.msg);
+                    err_msg += &format!("Details: {}\n", e.details);
+                    // err_msg += &format!("Tokens: {:?}", tokens);
                 }
                 return Err(err_msg);
             }
@@ -629,6 +712,9 @@ mod tests {
             "fn abc() { if x >= 9 { println(x);} else {println(y);}}",
             "fn abc() { if x == y { println(x); if x == true {}} else if cc==8 {println(y);}}",
             "fn a() { while x < 10 {println(x);}}",
+            "let a: &i32; let b: &&bool; let d: &mutf32;",
+            "let a: [f32]; let b: [i16; 10+5]; let c: [myStruct; _]; let d: &[s;1];",
+            "let a: ::size_t; let b: Point<f32>; let c: my_mod::TypeT<a, b, ::size_t>;",
         ];
         for c in tcs {
             match parse_code(c) {

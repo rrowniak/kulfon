@@ -35,20 +35,27 @@ const KULFON_KEYWORDS: &[&str] = &[
     KF_IN,
     KF_BREAK,
     KF_CONTINUE,
+    KF_STRUCT,
+    KF_ENUM,
+    KF_IMPL,
+    KF_SELF,
+    KF_SELFT,
     KF_TRUE,
     KF_FALSE,
 ];
 const KULFON_RES_KEYWORDS: &[&str] = RUST_KEYWORDS;
 #[rustfmt::skip]
 const KULFON_SPEC_SYMBOLS: &[&str] = &[
-    KF_CURLY_OPEN, KF_CURLY_CLOSE, KF_PARENTH_OPEN, KF_PARENTH_CLOSE, KF_SEMI, KF_COLON, KF_ARROW,
+    KF_CURLY_OPEN, KF_CURLY_CLOSE, KF_PARENTH_OPEN, KF_PARENTH_CLOSE, 
+    KF_BRACKET_OPEN, KF_BRACKET_CLOSE, KF_AMPERSAND, KF_SCOPE_RESOL, KF_AT,
+    KF_SEMI, KF_COLON, KF_ARROW,
     KF_DOT, KF_COMMA, KF_EQ, KF_NE, KF_GT, KF_GE, KF_LT, KF_LE, KF_MINUS, KF_PLUS, KF_SLASH,
-    KF_STAR, KF_BANG, KF_ASSIGN,
+    KF_STAR, KF_BANG, KF_ASSIGN, KF_AND, KF_OR,
     // Single-character symbols
-    "[", "]", "%", "^", "&", "|", "~",
-    "@", "#", "$", "?", ";", ":", ",", ".", "'", "\"", "_",
+    "%", "^", "|", "~",
+    "#", "$", "?", ";", ":", ",", ".", "'", "\"", "_",
     // Multi-character operators and symbols
-    "=>", "::", "..", "...", "..=", "&&", "||", "<<", ">>", "+=", 
+    "=>", "..", "...", "..=", "<<", ">>", "+=", 
     "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--", 
     // Attribute and macro-related
     "#!", "#[", "]", "?"
@@ -67,6 +74,11 @@ const KF_MUT: &str = "mut";
 const KF_IN: &str = "in";
 const KF_BREAK: &str = "break";
 const KF_CONTINUE: &str = "continue";
+const KF_STRUCT: &str = "struct";
+const KF_ENUM: &str = "enum";
+const KF_IMPL: &str = "impl";
+const KF_SELF: &str = "self";
+const KF_SELFT: &str = "Self";
 // kulfon special literals
 const KF_TRUE: &str = "true";
 const KF_FALSE: &str = "false";
@@ -75,6 +87,11 @@ const KF_CURLY_OPEN: &str = "{";
 const KF_CURLY_CLOSE: &str = "}";
 const KF_PARENTH_OPEN: &str = "(";
 const KF_PARENTH_CLOSE: &str = ")";
+const KF_BRACKET_OPEN: &str = "[";
+const KF_BRACKET_CLOSE: &str = "]";
+const KF_AMPERSAND: &str = "&";
+const KF_SCOPE_RESOL: &str = "::";
+const KF_AT: &str = "@";
 const KF_SEMI: &str = ";";
 const KF_COLON: &str = ":";
 const KF_ARROW: &str = "->";
@@ -93,6 +110,8 @@ const KF_SLASH: &str = "/";
 const KF_STAR: &str = "*";
 const KF_BANG: &str = "!";
 const KF_ASSIGN: &str = "=";
+const KF_AND: &str = "&&";
+const KF_OR: &str = "||";
 
 #[derive(Debug, PartialEq)]
 pub enum KfTokKind {
@@ -109,6 +128,11 @@ pub enum KfTokKind {
     KwIn,
     KwBreak,
     KwContinue,
+    KwStruct,
+    KwEnum,
+    KwImpl,
+    KwSelf,
+    KwSelfT,
     // special literals
     SlTrue,
     SlFalse,
@@ -117,6 +141,11 @@ pub enum KfTokKind {
     SymCurlyClose,
     SymParenthOpen,
     SymParenthClose,
+    SymBracketOpen,
+    SymBracketClose,
+    SymAmpersand,
+    SymScopeResolution,
+    SymAt,
     SymSemi,
     SymColon,
     SymArrow,
@@ -135,13 +164,15 @@ pub enum KfTokKind {
     OpStar,
     OpBang,
     OpAssign,
+    OpAnd,
+    OpOr,
     // literals
     LitString,
     LitChar,
     // LitInt,
     // LitFloat,
     Literal,
-    Comment,
+    // Comment,
 }
 
 impl KfTokKind {
@@ -159,12 +190,22 @@ impl KfTokKind {
             KF_IN => KfTokKind::KwIn,
             KF_BREAK => KfTokKind::KwBreak,
             KF_CONTINUE => KfTokKind::KwContinue,
+            KF_STRUCT => KfTokKind::KwStruct,
+            KF_ENUM => KfTokKind::KwEnum,
+            KF_IMPL => KfTokKind::KwImpl,
+            KF_SELF => KfTokKind::KwSelf,
+            KF_SELFT => KfTokKind::KwSelfT,
             KF_TRUE => KfTokKind::SlTrue,
             KF_FALSE => KfTokKind::SlFalse,
             KF_CURLY_OPEN => KfTokKind::SymCurlyOpen,
             KF_CURLY_CLOSE => KfTokKind::SymCurlyClose,
             KF_PARENTH_OPEN => KfTokKind::SymParenthOpen,
             KF_PARENTH_CLOSE => KfTokKind::SymParenthClose,
+            KF_BRACKET_OPEN => KfTokKind::SymBracketOpen,
+            KF_BRACKET_CLOSE =>KfTokKind::SymBracketClose,
+            KF_AMPERSAND => KfTokKind::SymAmpersand,
+            KF_SCOPE_RESOL => KfTokKind::SymScopeResolution,
+            KF_AT => KfTokKind::SymAt,
             KF_SEMI => KfTokKind::SymSemi,
             KF_COLON => KfTokKind::SymColon,
             KF_ARROW => KfTokKind::SymArrow,
@@ -182,6 +223,8 @@ impl KfTokKind {
             KF_STAR => KfTokKind::OpStar,
             KF_BANG => KfTokKind::OpBang,
             KF_ASSIGN => KfTokKind::OpAssign,
+            KF_AND => KfTokKind::OpAnd,
+            KF_OR => KfTokKind::OpOr,
             _ => return None,
         };
         Some(t)

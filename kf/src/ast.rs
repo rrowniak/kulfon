@@ -13,10 +13,44 @@ pub struct Fun {
     pub ret: TypeDecl,
     pub body: Box<Node>,
 }
+#[derive(Debug, Clone)]
+pub enum RefType {
+    Borrow,
+    BorrowMut,
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeKind {
+    Array(Box<TypeDecl>, Option<Box<Node>>),
+    Slice(Box<TypeDecl>),
+    JustName(String),
+    JustNameGeneric(String, Vec<TypeDecl>),
+}
 
 #[derive(Debug, Clone)]
 pub struct TypeDecl {
-    pub typename: String,
+    pub reference_stack: Vec<RefType>,
+    pub scope_res_relative: bool,
+    pub scope_resolution: Vec<String>,
+    pub type_id: TypeKind,
+}
+
+impl TypeDecl {
+    pub fn new(typename: String) -> Self {
+        Self {
+            reference_stack: Vec::new(),
+            scope_res_relative: true,
+            scope_resolution: Vec::new(),
+            type_id: TypeKind::JustName(typename),
+        }
+    }
+
+    pub fn typename(&self) -> Option<String> {
+        match &self.type_id {
+            TypeKind::JustName(n) => Some(n.clone()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

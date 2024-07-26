@@ -171,16 +171,18 @@ impl<'a> CGen<'a> {
 
     fn transform_fn(&mut self, fn_def: &ast::Fun, indent: usize) -> ResultC {
         let indent_s = self.indent_str(indent);
-        let ret_type = if fn_def.ret.typename.len() == 0 {
+        // TODO:
+        let ret_type = if fn_def.ret.typename().unwrap().len() == 0 {
             "void".into()
         } else {
-            fn_def.ret.typename.clone()
+            // TODO:
+            fn_def.ret.typename().unwrap().clone()
         };
         let args = String::new();
         let body = self.process_ast_node(&fn_def.body, indent + INDENT_LEVEL)?;
         let c_fn = if self.scope_depth == 1 && fn_def.name == "main" {
             // this is a special case - main function
-            if fn_def.ret.typename.len() != 0 {
+            if fn_def.ret.typename().unwrap().len() != 0 {
                 return Err(
                     "main function (program entry point) shall have no return type defined".into(),
                 );
@@ -286,7 +288,10 @@ impl<'a> CGen<'a> {
             .vartype
             .clone()
             .expect(&format!("Type for {varname} must be deduced"));
-        if let Some(kf_built_in) = type_system::EvaluatedType::from_str(&type_kf.typename) {
+        // TODO:
+        if let Some(kf_built_in) =
+            type_system::EvaluatedType::from_str(&type_kf.typename().unwrap())
+        {
             // this is a built-in KF type, convert it to C type
             let type_c = type_conv::convert_built_in(kf_built_in.clone()).expect(&format!(
                 "Fatal error while convertig KF built-in type {kf_built_in:?} into C-type",

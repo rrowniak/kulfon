@@ -16,7 +16,7 @@ pub struct TextPoint {
 #[derive(Debug)]
 pub enum MessageKind {
     Error,
-    Warning,
+    // Warning,
 }
 
 #[derive(Debug)]
@@ -125,7 +125,7 @@ pub fn error_expected_literal(got: &KfToken) -> CompileMessage {
     CompileMessage {
         kind: MessageKind::Error,
         msg: "unexpected token".into(),
-        details: format!("Expected a literal (such as a number, function name, or variable name) but encountered a different token '{got:?}'. Ensure that your expression includes a valid literal in the expected position. For example: 42, my_function, or variableName."),
+        details: format!("Expected a literal (such as a number, function name, type name, or variable name) but encountered a different token '{got:?}'. Ensure that your expression includes a valid literal in the expected position. For example: 42, my_function, or variableName."),
         at: Some(got.at),
     }
 }
