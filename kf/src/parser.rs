@@ -82,10 +82,7 @@ impl<'a> KfParser<'a> {
 
     fn parse_prog_statement(&mut self) -> ParsingResult<ast::Node> {
         match &self.get_curr()?.kind {
-            KfTokKind::KwFn => {
-                // function declaration
-                self.parse_fun()
-            }
+            KfTokKind::KwFn => self.parse_fun(),
             KfTokKind::KwLet => {
                 if self.check_tok_sequence(&[KfTokKind::KwLet, KfTokKind::KwMut]) {
                     self.parse_mut_var()
@@ -93,6 +90,9 @@ impl<'a> KfParser<'a> {
                     self.parse_var()
                 }
             }
+            KfTokKind::KwStruct => self.parse_struct(),
+            KfTokKind::KwEnum => self.parse_enum(),
+            KfTokKind::KwImpl => self.parse_impl(),
             _ => {
                 // error: unexpected symbol
                 Err(vec![comp_msg::error_inv_statement_glob()])
@@ -202,6 +202,7 @@ impl<'a> KfParser<'a> {
             self.consume_tok(KfTokKind::SymBracketClose)?;
             return type_result;
         } else {
+            // inlined parse_typename
             // there must be a typename
             if self.match_current_tok(KfTokKind::SymScopeResolution) {
                 scope_res_relative = false;
@@ -215,6 +216,7 @@ impl<'a> KfParser<'a> {
                 }
             };
             let mut generic_types = Vec::new();
+            // inlined parse_type_list
             if self.match_current_tok(KfTokKind::OpLt) {
                 while !self.match_current_tok(KfTokKind::OpGt) {
                     generic_types.push(self.parse_type()?);
@@ -237,6 +239,77 @@ impl<'a> KfParser<'a> {
                 })
             }
         }
+    }
+
+    fn parse_struct(&mut self) -> ParsingResult<ast::Node> {
+        self.consume_tok(KfTokKind::KwStruct)?;
+        let at = self.get_curr()?.at;
+        let name = self.consume_name_literal()?;
+        self.consume_tok(KfTokKind::SymCurlyOpen)?;
+        let members = self.parse_struct_fields()?;
+        self.consume_tok(KfTokKind::SymCurlyClose)?;
+        Ok(ast::Node::new(
+            ast::Ntype::Struct(ast::Struct { name, members }),
+            at,
+        ))
+    }
+
+    fn parse_struct_fields(&mut self) -> ParsingResult<Vec<ast::VarDecl>> {
+        let mut ret = Vec::new();
+        while self.get_curr()?.kind != KfTokKind::SymCurlyClose {
+            let name = self.consume_name_literal()?;
+            self.consume_tok(KfTokKind::SymColon)?;
+            let type_dec = self.parse_type()?;
+            self.match_current_tok(KfTokKind::SymComma);
+            ret.push(ast::VarDecl { name, type_dec })
+        }
+        Ok(ret)
+    }
+
+    fn parse_enum(&mut self) -> ParsingResult<ast::Node> {
+        self.consume_tok(KfTokKind::KwEnum)?;
+        let at = self.get_curr()?.at;
+        let name = self.consume_name_literal()?;
+        self.consume_tok(KfTokKind::SymCurlyOpen)?;
+        let enums = self.parse_enum_fields()?;
+        self.consume_tok(KfTokKind::SymCurlyClose)?;
+        Ok(ast::Node::new(
+            ast::Ntype::Enum(ast::Enum { name, enums }),
+            at,
+        ))
+    }
+
+    fn parse_enum_fields(&mut self) -> ParsingResult<Vec<(String, Option<ast::TypeDecl>)>> {
+        let mut ret = Vec::new();
+        while self.get_curr()?.kind != KfTokKind::SymCurlyClose {
+            let name = self.consume_name_literal()?;
+            // self.consume_tok(KfTokKind::SymColon)?;
+            if self.match_current_tok(KfTokKind::SymParenthOpen) {
+                let type_dec = self.parse_type()?;
+                ret.push((name, Some(type_dec)));
+                self.consume_tok(KfTokKind::SymParenthClose)?;
+            } else {
+                ret.push((name, None));
+            }
+            self.match_current_tok(KfTokKind::SymComma);
+        }
+        Ok(ret)
+    }
+
+    fn parse_impl(&mut self) -> ParsingResult<ast::Node> {
+        self.consume_tok(KfTokKind::KwImpl)?;
+        let at = self.get_curr()?.at;
+        let name = self.consume_name_literal()?;
+        self.consume_tok(KfTokKind::SymCurlyOpen)?;
+        let mut scope = Vec::new();
+        while self.get_curr()?.kind != KfTokKind::SymCurlyClose {
+            scope.push(self.parse_fun()?);
+        }
+        self.consume_tok(KfTokKind::SymCurlyClose)?;
+        Ok(ast::Node::new(
+            ast::Ntype::Impl(ast::Impl { name, scope }),
+            at,
+        ))
     }
 
     fn parse_scope(&mut self) -> ParsingResult<ast::Node> {
@@ -715,6 +788,9 @@ mod tests {
             "let a: &i32; let b: &&bool; let d: &mutf32;",
             "let a: [f32]; let b: [i16; 10+5]; let c: [myStruct; _]; let d: &[s;1];",
             "let a: ::size_t; let b: Point<f32>; let c: my_mod::TypeT<a, b, ::size_t>;",
+            "struct MyStruct {} struct A {x: i32} struct b {y:i32, z:bool}",
+            "enum T {A, B, C} enum B {A, B(i32), C(MyStruct)}",
+            "impl A { fn B(){} }",
         ];
         for c in tcs {
             match parse_code(c) {

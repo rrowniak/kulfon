@@ -137,6 +137,9 @@ impl<'a> CGen<'a> {
             )),
             ast::Ntype::Break => Ok(format!("{}break;", self.indent_str(indent))),
             ast::Ntype::Continue => Ok(format!("{}continue;", self.indent_str(indent))),
+            ast::Ntype::Struct(_) => unimplemented!(),
+            ast::Ntype::Enum(_) => unimplemented!(),
+            ast::Ntype::Impl(_) => unimplemented!(),
             ast::Ntype::False => {
                 self.bool_in_use = true;
                 Ok(format!("false"))

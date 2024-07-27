@@ -100,6 +100,24 @@ pub struct VarDef {
 }
 
 #[derive(Debug, Clone)]
+pub struct Struct {
+    pub name: String,
+    pub members: Vec<VarDecl>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Enum {
+    pub name: String,
+    pub enums: Vec<(String, Option<TypeDecl>)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Impl {
+    pub name: String,
+    pub scope: Vec<Node>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Node {
     pub val: Ntype,
     pub at: TextPoint,
@@ -141,6 +159,9 @@ pub enum Ntype {
     Break,
     Continue,
     // higher level structures
+    Struct(Struct),
+    Enum(Enum),
+    Impl(Impl),
     Scope(Vec<Node>),
     FnDef(Fun),
     FnCall(String, Vec<Node>),

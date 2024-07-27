@@ -3,15 +3,13 @@
 ## Highest priority
 
 ### Finishing language parsing
-- structs (struct + impl)
-- enums (enum)
+- [done] structs (struct + impl)
+- [done] enums (enum)
 - [done] arrays & slices ([])
-- parsing matching patterns
-- missing operators
 - basic format string parsing
-- struct, enum and function annotations (@annotation)
 - [done] type parsing (literal names, references, arrays, slices, generic types, function pointers)
-- range struct (0..20 => Range{start:0, end:20})
+- parsing struct and enum initialization
+- parsing array initialization
 
 ### Type system
 - [done] basic checking types
@@ -36,6 +34,11 @@
 - importing structures
 
 ## Next in the queue
+
+- struct, enum and function annotations (@annotation)
+- missing operators
+- parsing matching patterns
+- range struct (0..20 => Range{start:0, end:20})
 
 ### generics
 - parsing generics

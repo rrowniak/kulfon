@@ -402,6 +402,9 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), CompileMsgCol> {
         ast::Ntype::Break => set_type(n, s, KfType::from_literal(EvaluatedType::Never), None),
         ast::Ntype::Continue => set_type(n, s, KfType::from_literal(EvaluatedType::Never), None),
         // higher level structures
+        ast::Ntype::Struct(_) => unimplemented!(),
+        ast::Ntype::Enum(_) => unimplemented!(),
+        ast::Ntype::Impl(_) => unimplemented!(),
         ast::Ntype::Scope(a) => {
             s.scope_push(true);
             for n in a {
