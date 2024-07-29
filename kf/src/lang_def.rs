@@ -50,12 +50,12 @@ const KULFON_SPEC_SYMBOLS: &[&str] = &[
     KF_BRACKET_OPEN, KF_BRACKET_CLOSE, KF_AMPERSAND, KF_SCOPE_RESOL, KF_AT,
     KF_SEMI, KF_COLON, KF_ARROW,
     KF_DOT, KF_COMMA, KF_EQ, KF_NE, KF_GT, KF_GE, KF_LT, KF_LE, KF_MINUS, KF_PLUS, KF_SLASH,
-    KF_STAR, KF_BANG, KF_ASSIGN, KF_AND, KF_OR,
+    KF_STAR, KF_BANG, KF_ASSIGN, KF_AND, KF_OR, KF_ELLIPSIS,
     // Single-character symbols
     "%", "^", "|", "~",
     "#", "$", "?", ";", ":", ",", ".", "'", "\"", "_",
     // Multi-character operators and symbols
-    "=>", "..", "...", "..=", "<<", ">>", "+=", 
+    "=>", "..", "..=", "<<", ">>", "+=", 
     "-=", "*=", "/=", "%=", "^=", "&=", "|=", "<<=", ">>=", "++", "--", 
     // Attribute and macro-related
     "#!", "#[", "]", "?"
@@ -112,6 +112,7 @@ const KF_BANG: &str = "!";
 const KF_ASSIGN: &str = "=";
 const KF_AND: &str = "&&";
 const KF_OR: &str = "||";
+const KF_ELLIPSIS: &str = "...";
 
 #[derive(Debug, PartialEq)]
 pub enum KfTokKind {
@@ -151,6 +152,7 @@ pub enum KfTokKind {
     SymArrow,
     SymDot,
     SymComma,
+    SymEllipsis,
     // operators
     OpEq,
     OpNe,
@@ -211,6 +213,7 @@ impl KfTokKind {
             KF_ARROW => KfTokKind::SymArrow,
             KF_DOT => KfTokKind::SymDot,
             KF_COMMA => KfTokKind::SymComma,
+            KF_ELLIPSIS => KfTokKind::SymEllipsis,
             KF_EQ => KfTokKind::OpEq,
             KF_NE => KfTokKind::OpNe,
             KF_GT => KfTokKind::OpGt,

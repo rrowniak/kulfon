@@ -8,7 +8,7 @@ parse_prog_statement ::= parse_fun | parse_var | parse_mut_var | parse_struct | 
 
 ## Function definition
 ```
-parse_fun ::= 'fn' FN_NAME '(' parse_arg_list ')' ('->' parse_type)? parse_scope
+parse_fun ::= 'fn' FN_NAME '(' parse_arg_list (',' '...')? ')' ('->' parse_type)? parse_scope
 parse_arg_list ::= E | (ARG_NAME ':' parse_type) (',' ARG_NAME ':' parse_type)*
 ```
 

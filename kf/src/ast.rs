@@ -10,6 +10,7 @@ use crate::comp_msg::TextPoint;
 pub struct Fun {
     pub name: String,
     pub args: Vec<VarDecl>,
+    pub variadic: bool,
     pub ret: TypeDecl,
     pub body: Box<Node>,
 }

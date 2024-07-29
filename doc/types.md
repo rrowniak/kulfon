@@ -68,7 +68,7 @@ Function `panic` prints a message and terminates the program execution. So, effe
 
 ## Slices
 
-`let slice: [&i32] = [0..10];`
+`let slice: &[i32] = [0..10];`
 
 ## Structs
 

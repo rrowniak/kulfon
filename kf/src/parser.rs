@@ -103,8 +103,12 @@ impl<'a> KfParser<'a> {
     fn parse_fun(&mut self) -> ParsingResult<ast::Node> {
         let at = self.consume_tok(KfTokKind::KwFn)?;
         let name = self.consume_name_literal()?;
+        let mut variadic = false;
         self.consume_tok(KfTokKind::SymParenthOpen)?;
         let args = self.parse_arg_list()?;
+        if self.match_current_tok(KfTokKind::SymEllipsis) {
+            variadic = true;
+        }
         self.consume_tok(KfTokKind::SymParenthClose)?;
         // return value specified?
         let ret = if self.check_current_tok(KfTokKind::SymArrow) {
@@ -118,6 +122,7 @@ impl<'a> KfParser<'a> {
             ast::Ntype::FnDef(ast::Fun {
                 name,
                 args,
+                variadic,
                 ret,
                 body: Box::new(body),
             }),
@@ -134,6 +139,14 @@ impl<'a> KfParser<'a> {
             ret.push(ast::VarDecl { name, type_dec });
         }
         while !self.check_current_tok(KfTokKind::SymParenthClose) {
+            if self.check_tok_sequence(&[
+                KfTokKind::SymComma,
+                KfTokKind::SymEllipsis,
+                KfTokKind::SymParenthClose,
+            ]) {
+                self.consume_tok(KfTokKind::SymComma)?;
+                return Ok(ret);
+            }
             if self.match_current_tok(KfTokKind::SymComma) {
                 let name = self.consume_name_literal()?;
                 self.consume_tok(KfTokKind::SymColon)?;
@@ -775,6 +788,9 @@ mod tests {
 
     #[test]
     fn parse_correct_code() {
+        // these are the correct Kulfon code snippets
+        // from the parser perspective! Type checking and
+        // other advanced stuff don't happen here.
         let tcs = [
             "fn main(){}",
             "fn _fn() {}",
@@ -791,6 +807,7 @@ mod tests {
             "struct MyStruct {} struct A {x: i32} struct b {y:i32, z:bool}",
             "enum T {A, B, C} enum B {A, B(i32), C(MyStruct)}",
             "impl A { fn B(){} }",
+            "fn a(i:i32,...) {}",
         ];
         for c in tcs {
             match parse_code(c) {

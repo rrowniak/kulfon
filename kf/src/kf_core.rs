@@ -104,6 +104,7 @@ fn collect_glob_functions(syntree: &mut ast::Node, ctx: &mut Context) -> Result<
             let ast::Fun {
                 name,
                 args,
+                variadic: _,
                 ret,
                 body: _,
             } = fndef;

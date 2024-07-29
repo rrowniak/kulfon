@@ -7,6 +7,7 @@
 - [done] enums (enum)
 - [done] arrays & slices ([])
 - basic format string parsing
+- [done] variable length function parsing
 - [done] type parsing (literal names, references, arrays, slices, generic types, function pointers)
 - parsing struct and enum initialization
 - parsing array initialization
