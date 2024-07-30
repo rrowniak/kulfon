@@ -242,23 +242,23 @@ pub struct KfToken {
 }
 
 #[derive(Clone)]
-pub struct Range {
-    pub start: String,
-    pub end: String,
-    pub exceptions: Vec<String>,
+pub struct Range<'a> {
+    pub start: &'a str,
+    pub end: &'a str,
+    pub exceptions: Vec<&'a str>,
     pub eof_allowed: bool,
 }
 
 #[derive(Clone)]
-pub enum RangeBased {
-    LineComment(Range),
+pub enum RangeBased<'a> {
+    LineComment(Range<'a>),
     // DocComment(Range),
-    Comment(Range),
-    String(Range),
-    RawString(Range),
+    Comment(Range<'a>),
+    String(Range<'a>),
+    RawString(Range<'a>),
 }
 
-impl RangeBased {
+impl<'a> RangeBased<'a> {
     pub fn get_range(&self) -> &Range {
         match self {
             RangeBased::LineComment(r) => r,
@@ -270,57 +270,46 @@ impl RangeBased {
     }
 }
 
-pub struct Lang {
-    pub keywords: Vec<String>,
-    pub reserved_keywords: Vec<String>,
-    pub special_sym: Vec<String>,
-    pub range_based: Vec<RangeBased>,
+pub struct Lang<'a> {
+    pub keywords: Vec<&'a str>,
+    pub reserved_keywords: Vec<&'a str>,
+    pub special_sym: Vec<&'a str>,
+    pub range_based: Vec<RangeBased<'a>>,
 }
 
-impl Lang {
-    // pub fn new_empty() -> Lang {
-    //     Lang {
-    //         keywords: Vec::new(),
-    //         reserved_keywords: Vec::new(),
-    //         special_sym: Vec::new(),
-    //         range_based: Vec::new(),
-    //     }
-    // }
-    pub fn new() -> Lang {
-        let mut sym = KULFON_SPEC_SYMBOLS
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<String>>();
+impl<'a> Lang<'a> {
+        pub fn new() -> Lang<'a> {
+        let mut sym = KULFON_SPEC_SYMBOLS.to_vec();
         // sort by length starting from the longer symobol
         // that order is needed by lexer
         sym.sort_by(|a, b| b.len().cmp(&a.len()));
 
         Lang {
-            keywords: KULFON_KEYWORDS.iter().map(|s| s.to_string()).collect(),
-            reserved_keywords: KULFON_RES_KEYWORDS.iter().map(|s| s.to_string()).collect(),
+            keywords: KULFON_KEYWORDS.to_vec(),
+            reserved_keywords: KULFON_RES_KEYWORDS.to_vec(),
             special_sym: sym,
             range_based: vec![
                 RangeBased::LineComment(Range {
-                    start: "//".into(),
-                    end: "\n".into(),
+                    start: "//",
+                    end: "\n",
                     exceptions: Vec::new(),
                     eof_allowed: true,
                 }),
                 RangeBased::Comment(Range {
-                    start: "/*".into(),
-                    end: "*/".into(),
+                    start: "/*",
+                    end: "*/",
                     exceptions: Vec::new(),
                     eof_allowed: false,
                 }),
                 RangeBased::String(Range {
-                    start: "\"".into(),
-                    end: "\"".into(),
+                    start: "\"",
+                    end: "\"",
                     exceptions: vec!["\\\"".into()],
                     eof_allowed: false,
                 }),
                 RangeBased::RawString(Range {
-                    start: "r#\"".into(),
-                    end: "\"#".into(),
+                    start: "r#\"",
+                    end: "\"#",
                     exceptions: Vec::new(),
                     eof_allowed: false,
                 }),

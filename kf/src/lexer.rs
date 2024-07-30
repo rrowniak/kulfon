@@ -54,7 +54,7 @@ pub fn tokenize(lang: &Lang, code: &str) -> (Vec<Token>, CompileMsgCol) {
 }
 
 struct Tokenizer<'a> {
-    lang: &'a Lang,
+    lang: &'a Lang<'a>,
     code: &'a str,
     curr_point: TextPoint,
     skip_n: usize,
@@ -65,10 +65,10 @@ struct Tokenizer<'a> {
 }
 
 #[derive(Clone)]
-enum TokenizeState {
+enum TokenizeState<'a> {
     Idle,
     ParseLiteral,
-    ParseRange(RangeBased),
+    ParseRange(RangeBased<'a>),
 }
 
 impl<'a> Tokenizer<'a> {
@@ -215,7 +215,7 @@ impl<'a> Tokenizer<'a> {
                         }
                         // if we're here, there are two options: >'< is a symbol or we have
                         // parsing error
-                        if !self.lang.special_sym.contains(&"'".to_string()) {
+                        if !self.lang.special_sym.contains(&"'") {
                             errors.push(comp_msg::error_invalid_char(self.curr_point));
                         }
                     }
@@ -227,7 +227,7 @@ impl<'a> Tokenizer<'a> {
                             // `_variable` - this is literal
                             // `__` - this is literal (another corner case!)
                             if let Some(cc) = self.get_nth(1) {
-                                if (s == "_") && (cc.is_ascii_alphanumeric() || cc == '_') {
+                                if (s == &"_") && (cc.is_ascii_alphanumeric() || cc == '_') {
                                     // next character is alphanumeric - this is literal case
                                     break;
                                 }
@@ -347,7 +347,7 @@ impl<'a> Tokenizer<'a> {
 
     fn gen_token_literal_or_keyword(&self, start_pos: usize, start_point: TextPoint) -> Token {
         let text = self.code[start_pos..self.pos].to_string();
-        let kind = if self.lang.keywords.contains(&text) {
+        let kind = if self.lang.keywords.contains(&text.as_str()) {
             TokenKind::Keyword
         } else {
             TokenKind::Literal
