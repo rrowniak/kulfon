@@ -5,7 +5,7 @@
 // Created on: 25.06.2024
 // ---------------------------------------------------
 use crate::ast;
-use crate::cbackend::type_conv;
+use crate::cbackend::generators;
 use crate::kf_core;
 use crate::type_system;
 use std::collections::{HashMap, HashSet};
@@ -17,13 +17,55 @@ pub fn gen_c_code(mid: &kf_core::InterRepr) -> ResultC {
     CGen::new(mid).gen()
 }
 
+pub struct CGenCtx {
+    pub stdlibs: HashSet<&'static str>,
+    pub cstd_calls: HashSet<String>,
+    pub bool_in_use: bool,
+}
+
+impl CGenCtx {
+    fn new() -> Self {
+        Self {
+            stdlibs: HashSet::new(),
+            cstd_calls: HashSet::new(),
+            bool_in_use: false,
+        }
+    }
+
+    fn generate_context_code(&self) -> String {
+        let mut ret = String::new();
+        ret += &self.gen_include_directives();
+        ret += "\n";
+        if self.bool_in_use {
+            ret += generators::gen_bool_def();
+            ret += "\n";
+        }
+        ret
+    }
+
+    fn gen_include_directives(&self) -> String {
+        let fun_to_header_map = HashMap::from([("printf", "stdio.h")]);
+        let mut stdlibs: HashSet<&'static str> = HashSet::new();
+        for fun in self.cstd_calls.iter() {
+            let header = match fun_to_header_map.get(fun.as_str()) {
+                Some(h) => h,
+                None => panic!("Can't find a c-header for function {fun}"),
+            };
+            stdlibs.insert(header);
+        }
+        let mut ret = String::new();
+        for h in stdlibs.union(&self.stdlibs) {
+            ret += &format!("#include <{h}>\n");
+        }
+
+        ret
+    }
+}
+
 struct CGen<'a> {
     mid: &'a kf_core::InterRepr,
+    ctx: CGenCtx,
     scope_depth: usize,
-    cstd_calls: HashSet<String>,
-    fun_to_header_map: HashMap<&'static str, &'static str>,
-    bool_in_use: bool,
-    stdlibs: HashSet<&'static str>,
     loc_variables: Vec<Vec<ast::VarDef>>,
 }
 
@@ -31,24 +73,15 @@ impl<'a> CGen<'a> {
     fn new(mid: &'a kf_core::InterRepr) -> Self {
         Self {
             mid,
+            ctx: CGenCtx::new(),
             scope_depth: 0,
-            cstd_calls: HashSet::new(),
-            fun_to_header_map: HashMap::from([("printf", "stdio.h")]),
-            bool_in_use: false,
-            stdlibs: HashSet::new(),
             loc_variables: Vec::new(),
         }
     }
 
     fn gen(&mut self) -> ResultC {
-        // println!("{:?}", self.mid.syntree);
         let code = self.process_ast_node(&self.mid.syntree, 0)?;
-        let mut ret = self.gen_include_directives()?;
-        ret += "\n";
-        if self.bool_in_use {
-            ret += self.gen_bool_def();
-            ret += "\n";
-        }
+        let mut ret = self.ctx.generate_context_code();
         ret += code.as_str();
         Ok(ret)
     }
@@ -140,14 +173,8 @@ impl<'a> CGen<'a> {
             ast::Ntype::Struct(_) => unimplemented!(),
             ast::Ntype::Enum(_) => unimplemented!(),
             ast::Ntype::Impl(_) => unimplemented!(),
-            ast::Ntype::False => {
-                self.bool_in_use = true;
-                Ok(format!("false"))
-            }
-            ast::Ntype::True => {
-                self.bool_in_use = true;
-                Ok(format!("true"))
-            }
+            ast::Ntype::False => Ok(generators::gen_bool_var(false, &mut self.ctx).into()),
+            ast::Ntype::True => Ok(generators::gen_bool_var(true, &mut self.ctx).into()),
             ast::Ntype::If(if_) => self.transform_if(if_, indent),
             ast::Ntype::For(for_) => self.transform_for(for_, indent),
             ast::Ntype::While(while_) => self.transform_while(while_, indent),
@@ -232,7 +259,7 @@ impl<'a> CGen<'a> {
             }
         }
         let statement = if name == "print" {
-            self.cstd_calls.insert("printf".into());
+            self.ctx.cstd_calls.insert("printf".into());
             format!("{indent_s}printf({args_s});")
         } else {
             format!("{indent_s}{name}({args_s});")
@@ -274,8 +301,10 @@ impl<'a> CGen<'a> {
     fn transform_loop(&mut self, loop_: &ast::Loop, indent: usize) -> ResultC {
         let body = self.process_ast_node(&loop_.body, indent + INDENT_LEVEL)?;
         let indent_s = self.indent_str(indent);
-        self.bool_in_use = true;
-        let ret = format!("{indent_s}while (true) {{{body}\n{indent_s}}}");
+        let ret = format!(
+            "{indent_s}while ({}) {{{body}\n{indent_s}}}",
+            generators::gen_bool_var(true, &mut self.ctx)
+        );
         Ok(ret)
     }
 
@@ -296,14 +325,10 @@ impl<'a> CGen<'a> {
             type_system::EvaluatedType::from_str(&type_kf.typename().unwrap())
         {
             // this is a built-in KF type, convert it to C type
-            let type_c = type_conv::convert_built_in(kf_built_in.clone()).expect(&format!(
-                "Fatal error while convertig KF built-in type {kf_built_in:?} into C-type",
-            ));
-            if kf_built_in == type_system::EvaluatedType::Bool {
-                self.bool_in_use = true;
-            } else {
-                self.stdlibs.extend(type_conv::required_headers());
-            }
+            let type_c =
+                generators::generate_type(kf_built_in.clone(), &mut self.ctx).expect(&format!(
+                    "Fatal error while convertig KF built-in type {kf_built_in:?} into C-type",
+                ));
             ret += format!("{type_c} {varname}").as_str();
         } else {
             // presumably a custom type
@@ -314,27 +339,6 @@ impl<'a> CGen<'a> {
         ret += format!(" = {}", self.process_ast_node(&var_expr, 0)?).as_str();
 
         Ok(ret)
-    }
-
-    fn gen_include_directives(&self) -> ResultC {
-        let mut stdlibs: HashSet<&'static str> = HashSet::new();
-        for fun in self.cstd_calls.iter() {
-            let header = match self.fun_to_header_map.get(fun.as_str()) {
-                Some(h) => h,
-                None => return Err(format!("Can't find a c-header for function {fun}")),
-            };
-            stdlibs.insert(header);
-        }
-        let mut ret = String::new();
-        for h in stdlibs.union(&self.stdlibs) {
-            ret += &format!("#include <{h}>\n");
-        }
-
-        Ok(ret)
-    }
-
-    fn gen_bool_def(&self) -> &'static str {
-        "typedef enum {false, true} kf_boolean;"
     }
 
     fn indent_str(&self, indent: usize) -> String {

@@ -77,7 +77,7 @@ pub struct InterRepr {
 }
 
 impl InterRepr {
-    pub fn from(mut syntree: ast::Node) -> Result<Self, CompileMsgCol> {
+    pub fn from(mut syntree: ast::Node, mut builtin: ast::Node) -> Result<Self, CompileMsgCol> {
         let mut ctx = Context {
             side_nodes: Vec::new(),
             glob_functs: HashMap::new(),
@@ -85,6 +85,7 @@ impl InterRepr {
             temp_scope: Vec::new(),
         };
         // collect all function definitions
+        collect_glob_functions(&mut builtin, &mut ctx)?;
         collect_glob_functions(&mut syntree, &mut ctx)?;
         // evaluate expression types
         eval_types(&mut syntree, &mut ctx)?;
@@ -759,6 +760,7 @@ fn classify_literal(input: &str) -> (EvaluatedType, Option<EvaluatedValue>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiler;
     use crate::lang_def::Lang;
     use crate::lexer;
     use crate::parser;
@@ -778,12 +780,16 @@ mod tests {
         }
     }
 
-    fn parse_code(code: &str) -> Result<ast::Node, String> {
+    fn parse_code(code: &str) -> Result<(ast::Node, ast::Node), String> {
+        let (tokens, errors) = lexer::tokenize(&Lang::new(), compiler::BUILT_IN_STUFF);
+        throw_errors(errors)?;
+        let ast_built_in = parser::parse(&tokens).unwrap();
+
         let (tokens, errors) = lexer::tokenize(&Lang::new(), code);
         throw_errors(errors)?;
         let ast_tree = parser::parse(&tokens);
         match ast_tree {
-            Ok(ast) => Ok(ast),
+            Ok(ast) => Ok((ast, ast_built_in)),
             Err(errs) => {
                 let mut err_msg = String::new();
                 for e in errs {
@@ -808,8 +814,8 @@ mod tests {
             "fn a() { let mut b: i32 = 0; if true {b = 1;}}",
         ];
         for c in tcs {
-            let ast = parse_code(c).unwrap();
-            let inter = InterRepr::from(ast);
+            let (ast, built_in) = parse_code(c).unwrap();
+            let inter = InterRepr::from(ast, built_in);
             match inter {
                 Ok(_) => {}
                 Err(e) => {
@@ -836,8 +842,8 @@ mod tests {
             "fn a() { let b: i32 = 0; if true {b = 1;}}",
         ];
         for c in tcs {
-            let ast = parse_code(c).unwrap();
-            let inter = InterRepr::from(ast);
+            let (ast, built_in) = parse_code(c).unwrap();
+            let inter = InterRepr::from(ast, built_in);
             match inter {
                 Ok(int) => {
                     println!("code: {c}");

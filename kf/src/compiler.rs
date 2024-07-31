@@ -36,6 +36,13 @@ enum Option<R> {
 
 pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Result<(), String> {
     let kulfon_lang = lang_def::Lang::new();
+    // parse built-in stuff
+    let (tokens, errors) = lexer::tokenize(&kulfon_lang, BUILT_IN_STUFF);
+    if errors.len() > 0 {
+        panic!("{:?}", errors);
+    }
+    let built_in_ast = parser::parse(&tokens).expect("Built-in stuff parsing failure");
+    // parse user source code
     let input_source = std::fs::read_to_string(&input);
     let input_source = match input_source {
         Ok(content) => content,
@@ -58,7 +65,7 @@ pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Resu
         }
     };
 
-    let int_repr = match kf_core::InterRepr::from(ast) {
+    let int_repr = match kf_core::InterRepr::from(ast, built_in_ast) {
         Ok(int) => int,
         Err(e) => return Err(process_errors(&input_source, &e)),
     };
