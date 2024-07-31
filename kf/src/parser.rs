@@ -215,27 +215,18 @@ impl<'a> KfParser<'a> {
             self.consume_tok(KfTokKind::SymBracketClose)?;
             return type_result;
         } else {
-            // inlined parse_typename
-            // there must be a typename
+            // parse_typename inlined here
+            // ::foo?
             if self.match_current_tok(KfTokKind::SymScopeResolution) {
                 scope_res_relative = false;
             }
-            let literal = loop {
-                let literal = self.consume_name_literal()?;
-                if self.match_current_tok(KfTokKind::SymScopeResolution) {
-                    scope_resolution.push(literal);
-                } else {
-                    break literal;
-                }
-            };
-            let mut generic_types = Vec::new();
-            // inlined parse_type_list
-            if self.match_current_tok(KfTokKind::OpLt) {
-                while !self.match_current_tok(KfTokKind::OpGt) {
-                    generic_types.push(self.parse_type()?);
-                    self.match_current_tok(KfTokKind::SymComma);
-                }
+            // foo::bar?
+            while self.check_tok_sequence(&[KfTokKind::Literal, KfTokKind::SymScopeResolution]) {
+                scope_resolution.push(self.consume_name_literal()?);
+                self.consume_tok(KfTokKind::SymScopeResolution)?;
             }
+            // bar<T, Z, K>?
+            let (literal, generic_types) = self.parse_typename_with_generics()?;
             if generic_types.len() > 0 {
                 Ok(ast::TypeDecl {
                     reference_stack,
@@ -254,15 +245,32 @@ impl<'a> KfParser<'a> {
         }
     }
 
+    fn parse_typename_with_generics(&mut self) -> ParsingResult<(String, Vec<ast::TypeDecl>)> {
+        let name = self.consume_name_literal()?;
+        let mut generic_types = Vec::new();
+        if self.match_current_tok(KfTokKind::OpLt) {
+            // parse_type_list inlined here
+            while !self.match_current_tok(KfTokKind::OpGt) {
+                generic_types.push(self.parse_type()?);
+                self.match_current_tok(KfTokKind::SymComma);
+            }
+        }
+        Ok((name, generic_types))
+    }
+
     fn parse_struct(&mut self) -> ParsingResult<ast::Node> {
         self.consume_tok(KfTokKind::KwStruct)?;
         let at = self.get_curr()?.at;
-        let name = self.consume_name_literal()?;
+        let (name, generic_args) = self.parse_typename_with_generics()?;
         self.consume_tok(KfTokKind::SymCurlyOpen)?;
         let members = self.parse_struct_fields()?;
         self.consume_tok(KfTokKind::SymCurlyClose)?;
         Ok(ast::Node::new(
-            ast::Ntype::Struct(ast::Struct { name, members }),
+            ast::Ntype::Struct(ast::Struct {
+                name,
+                generic_args,
+                members,
+            }),
             at,
         ))
     }
@@ -282,12 +290,16 @@ impl<'a> KfParser<'a> {
     fn parse_enum(&mut self) -> ParsingResult<ast::Node> {
         self.consume_tok(KfTokKind::KwEnum)?;
         let at = self.get_curr()?.at;
-        let name = self.consume_name_literal()?;
+        let (name, generic_args) = self.parse_typename_with_generics()?;
         self.consume_tok(KfTokKind::SymCurlyOpen)?;
         let enums = self.parse_enum_fields()?;
         self.consume_tok(KfTokKind::SymCurlyClose)?;
         Ok(ast::Node::new(
-            ast::Ntype::Enum(ast::Enum { name, enums }),
+            ast::Ntype::Enum(ast::Enum {
+                name,
+                generic_args,
+                enums,
+            }),
             at,
         ))
     }
@@ -756,8 +768,8 @@ mod tests {
             Err(errs) => {
                 let mut err_msg = String::new();
                 for e in errs {
-                    let at = e.at.unwrap_or(TextPoint { line: 0, col: 1 });
-                    err_msg += code;
+                    let at = e.at.unwrap_or(TextPoint { line: 1, col: 1 });
+                    err_msg += code.split("\n").collect::<Vec<_>>()[at.line - 1];
                     err_msg += &format!("\n{}^\n", " ".repeat(at.col - 1));
                     err_msg += &format!("Syntax error: {}\n", e.msg);
                     err_msg += &format!("Details: {}\n", e.details);
@@ -817,6 +829,19 @@ mod tests {
                     println!("{:}", e);
                     assert!(false);
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn parse_built_in_stuff() {
+        use crate::compiler::BUILT_IN_STUFF;
+        match parse_code(BUILT_IN_STUFF) {
+            Ok(_) => {}
+            Err(e) => {
+                // println!("Parsing built-in code:\n{}", BUILT_IN_STUFF);
+                println!("{e}");
+                assert!(false);
             }
         }
     }

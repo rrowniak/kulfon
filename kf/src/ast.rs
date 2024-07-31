@@ -103,12 +103,14 @@ pub struct VarDef {
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub name: String,
+    pub generic_args: Vec<TypeDecl>,
     pub members: Vec<VarDecl>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Enum {
     pub name: String,
+    pub generic_args: Vec<TypeDecl>,
     pub enums: Vec<(String, Option<TypeDecl>)>,
 }
 

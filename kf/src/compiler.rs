@@ -11,6 +11,29 @@ use crate::lang_def;
 use crate::lexer;
 use crate::parser;
 
+pub const BUILT_IN_STUFF: &str = r#"
+fn print(s: &str, ...) {}
+fn println(s: &str, ...) {}
+fn assert(cond: bool, s: &str, ...) {}
+fn panic(s: &str, ...) {}
+fn exit(code: i8) {}
+fn sleep(milisecs: i32) {}
+fn env(name: &str) -> str {}
+fn file_to_str(filename: &str) -> Result<str, Error> {}
+fn file_to_bytes(filename: &str) -> Result<Vec<u8>, Error> {}
+fn file_exists(filename: &str) -> bool {}
+
+enum Result<R, E> {
+    Ok(R),
+    Err(E)
+}
+
+enum Option<R> {
+    Some(R),
+    None,
+}
+"#;
+
 pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Result<(), String> {
     let kulfon_lang = lang_def::Lang::new();
     let input_source = std::fs::read_to_string(&input);

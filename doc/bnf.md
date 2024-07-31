@@ -16,20 +16,21 @@ parse_arg_list ::= E | (ARG_NAME ':' parse_type) (',' ARG_NAME ':' parse_type)*
 ```
 parse_type ::= '&' parse_type | '&' 'mut' parse_type | '[' parse_type ']' | '[' parse_type ';' parse_expression ']' | parse_type_name 
 // this is optimized out - recursice calls replaced with iterative approach
-parse_typename ::= '::' parse_type_name | TYPE_LITRAL '<' parse_type_list '>' | TYPE_LITERAL
+parse_typename ::= '::'? parse_type_name | parse_typename_with_generics 
+parse_typename_with_generics ::= TYPE_LITERAL ('<' parse_type_list '>')?
 parse_type_list ::= E | parse_type (',' parse_type)*
 ```
 
 ## Struct parsing
 ```
-parse_struct ::= 'struct' STRUCT_NAME '{' parse_struct_fields '}'
+parse_struct ::= 'struct' parse_typename_with_generics '{' parse_struct_fields '}'
 parse_struct_fields ::= E | (FIELD_NAME ':' parse_type) (',' FIELD_NAME ':' parse_type)*
 
 ```
 
 ## Enum parsing
 ```
-parse_enum ::= 'enum' ENUM_NAME '{' parse_enum_fields* '}'
+parse_enum ::= 'enum' parse_typename_with_generics '{' parse_enum_fields* '}'
 parse_enum_fields ::= E | (ENUM_FIELD_NAME | ENUM_FIELD_NAME '(' parse_type ')') (',' (ENUM_FIELD_NAME | ENUM_FIELD_NAME '(' parse_type')' ))
 ```
 
