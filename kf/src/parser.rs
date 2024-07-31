@@ -40,7 +40,7 @@ fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErr
         };
         kftokens.push(KfToken {
             kind: new_kind,
-            text: t.text.clone(),
+            text: t.text.into(),
             at: t.start,
         });
     }

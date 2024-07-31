@@ -33,14 +33,14 @@ impl fmt::Display for TokenKind {
     }
 }
 
-pub struct Token {
+pub struct Token<'a> {
     pub kind: TokenKind,
-    pub text: String,
+    pub text: &'a str,
     pub start: TextPoint,
     pub end: TextPoint,
 }
 
-impl fmt::Display for Token {
+impl<'a> fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[")?;
         self.kind.fmt(f)?;
@@ -49,12 +49,13 @@ impl fmt::Display for Token {
         write!(f, "']")
     }
 }
-pub fn tokenize(lang: &Lang, code: &str) -> (Vec<Token>, CompileMsgCol) {
-    Tokenizer::new(lang, code).tokenize()
+pub fn tokenize<'a, 'b>(lang: &'b Lang<'b>, code: &'a str) -> (Vec<Token<'a>>, CompileMsgCol) {
+    let mut t = Tokenizer::new(lang, code);
+    t.tokenize()
 }
 
-struct Tokenizer<'a> {
-    lang: &'a Lang<'a>,
+struct Tokenizer<'a, 'b> {
+    lang: &'b Lang<'b>,
     code: &'a str,
     curr_point: TextPoint,
     skip_n: usize,
@@ -71,8 +72,8 @@ enum TokenizeState<'a> {
     ParseRange(RangeBased<'a>),
 }
 
-impl<'a> Tokenizer<'a> {
-    fn new(lang: &'a Lang, code: &'a str) -> Tokenizer<'a> {
+impl<'a, 'b> Tokenizer<'a, 'b> {
+    fn new(lang: &'b Lang, code: &'a str) -> Tokenizer<'a, 'b> {
         Tokenizer {
             lang,
             code,
@@ -117,7 +118,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn tokenize(&mut self) -> (Vec<Token>, CompileMsgCol) {
+    fn tokenize(&mut self) -> (Vec<Token<'a>>, CompileMsgCol) {
         let mut tokens: Vec<Token> = Vec::new();
         let mut errors  = CompileMsgCol::new(); 
 
@@ -171,7 +172,7 @@ impl<'a> Tokenizer<'a> {
                                 self.skip_n = 2;
                                 tokens.push(Token {
                                     kind: TokenKind::Character,
-                                    text: self.code[self.pos + 1..self.pos + 2].to_string(),
+                                    text: &self.code[self.pos + 1..self.pos + 2],
                                     start: self.curr_point,
                                     end: TextPoint {
                                         line: self.curr_point.line,
@@ -198,7 +199,7 @@ impl<'a> Tokenizer<'a> {
                                         self.skip_n = 3;
                                         tokens.push(Token {
                                             kind: TokenKind::Character,
-                                            text: self.code[self.pos + 1..self.pos + 3].to_string(),
+                                            text: &self.code[self.pos + 1..self.pos + 3],
                                             start: self.curr_point,
                                             end: TextPoint {
                                                 line: self.curr_point.line,
@@ -237,7 +238,7 @@ impl<'a> Tokenizer<'a> {
                             self.skip_n = s.len() - 1;
                             tokens.push(Token {
                                 kind: TokenKind::Symbol,
-                                text: self.code[self.pos..self.pos + s.len()].to_string(),
+                                text: &self.code[self.pos..self.pos + s.len()],
                                 start: self.curr_point,
                                 end: TextPoint {
                                     line: self.curr_point.line,
@@ -289,7 +290,7 @@ impl<'a> Tokenizer<'a> {
                         };
                         tokens.push(Token {
                             kind,
-                            text: self.code[start_pos..self.pos].to_string(),
+                            text: &self.code[start_pos..self.pos],
                             start: start_point,
                             end: self.curr_point,
                         });
@@ -317,7 +318,7 @@ impl<'a> Tokenizer<'a> {
                     };
                     tokens.push(Token {
                         kind,
-                        text: self.code[start_pos..].to_string(),
+                        text: &self.code[start_pos..],
                         start: start_point,
                         end: self.curr_point,
                     });
@@ -345,9 +346,9 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn gen_token_literal_or_keyword(&self, start_pos: usize, start_point: TextPoint) -> Token {
-        let text = self.code[start_pos..self.pos].to_string();
-        let kind = if self.lang.keywords.contains(&text.as_str()) {
+    fn gen_token_literal_or_keyword(&self, start_pos: usize, start_point: TextPoint) -> Token<'a> {
+        let text = &self.code[start_pos..self.pos];
+        let kind = if self.lang.keywords.contains(&text) {
             TokenKind::Keyword
         } else {
             TokenKind::Literal
