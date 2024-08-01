@@ -251,19 +251,16 @@ impl<'a> CGen<'a> {
 
     fn transform_fn_call(&mut self, name: &str, args: &Vec<ast::Node>, indent: usize) -> ResultC {
         let indent_s = self.indent_str(indent);
-        let mut args_s = String::new();
-        for (i, e) in args.iter().enumerate() {
-            args_s += &self.process_ast_node(&e, 0)?;
-            if i < args.len() - 1 {
-                args_s += ", ";
-            }
+        let mut args_v = Vec::new();
+        for e in args.iter() {
+            let arg_s = self.process_ast_node(&e, 0)?;
+            let side_node = kf_core::get_side_node(e, &self.mid.ctx).unwrap();
+            let eval_t = side_node.eval_type.clone();
+            let eval_v = side_node.eval_val.clone();
+            args_v.push((arg_s, eval_t, eval_v));
         }
-        let statement = if name == "print" {
-            self.ctx.cstd_calls.insert("printf".into());
-            format!("{indent_s}printf({args_s});")
-        } else {
-            format!("{indent_s}{name}({args_s});")
-        };
+        let fn_call_s = generators::gen_fn_call(name, &args_v, &mut self.ctx);
+        let statement = format!("{indent_s}{fn_call_s};");
         Ok(statement)
     }
 

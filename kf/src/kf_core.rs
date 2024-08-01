@@ -610,7 +610,7 @@ fn set_type_void(n: &mut ast::Node, ctx: &mut Context) {
     }
 }
 
-fn get_side_node<'a>(n: &'a ast::Node, ctx: &'a Context) -> Option<&'a SideNode> {
+pub fn get_side_node<'a>(n: &'a ast::Node, ctx: &'a Context) -> Option<&'a SideNode> {
     if let Some(side_node) = n.meta_idx {
         Some(&ctx.side_nodes[side_node])
     } else {
