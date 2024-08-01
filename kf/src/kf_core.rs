@@ -498,20 +498,18 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), CompileMsgCol> {
                 }
                 None => {}
             }
-            s.scope_push_var(
-                vardef.name.clone(),
-                KfType {
-                    mutable: Some(vardef.mutable),
-                    eval_type: match &vardef.vartype {
-                        // TODO:
-                        Some(vd) => match EvaluatedType::from_str(&vd.typename().unwrap()) {
-                            Some(eval_t) => eval_t,
-                            None => EvaluatedType::ToBeInferred,
-                        },
+            let kf_t = KfType {
+                mutable: Some(vardef.mutable),
+                eval_type: match &vardef.vartype {
+                    // TODO:
+                    Some(vd) => match EvaluatedType::from_str(&vd.typename().unwrap()) {
+                        Some(eval_t) => eval_t,
                         None => EvaluatedType::ToBeInferred,
                     },
+                    None => EvaluatedType::ToBeInferred,
                 },
-            );
+            };
+            s.scope_push_var(vardef.name.clone(), kf_t);
             set_type_void(n, s);
         }
         // terminals
@@ -526,26 +524,36 @@ fn eval_types(n: &mut ast::Node, s: &mut Context) -> Result<(), CompileMsgCol> {
         }
         ast::Ntype::Literal(lit) => {
             let (t, v) = classify_literal(&lit);
+            let mutable = if v.is_some() { Some(false) } else { None };
             // is it a variable name?
             if t == EvaluatedType::ToBeInferred && v == None {
                 // check if a given variable was declared
-                if let Some(_variable) = s.scope_get_var(&lit) {
+                if let Some(variable) = s.scope_get_var(&lit) {
                     // TODO: and if so, check if the type is already determined
+                    set_type(
+                        n,
+                        s,
+                        KfType {
+                            mutable,
+                            eval_type: variable.eval_type,
+                        },
+                        v,
+                    );
                 } else {
                     // error
                     return Err(vec![comp_msg::error_undeclared_var(n.at)]);
                 }
+            } else {
+                set_type(
+                    n,
+                    s,
+                    KfType {
+                        mutable,
+                        eval_type: t,
+                    },
+                    v,
+                );
             }
-            let mutable = if v.is_some() { Some(false) } else { None };
-            set_type(
-                n,
-                s,
-                KfType {
-                    mutable,
-                    eval_type: t,
-                },
-                v,
-            );
         }
         ast::Ntype::Char(c) => {
             let c = c.clone();
