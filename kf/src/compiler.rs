@@ -14,6 +14,7 @@ use crate::parser;
 pub const BUILT_IN_STUFF: &str = r#"
 fn print(s: &str, ...) {}
 fn println(s: &str, ...) {}
+fn rand() -> i32 {}
 fn assert(cond: bool, s: &str, ...) {}
 fn panic(s: &str, ...) {}
 fn exit(code: i8) {}

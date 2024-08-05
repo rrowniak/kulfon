@@ -69,9 +69,10 @@ impl EvaluatedType {
     ///
     /// Checks if given literal represents a built-in type
     ///
-    pub fn is_builtin(s: &str) -> bool {
-        Self::from_str(s).is_some()
-    }
+    // pub fn is_builtin(s: &str) -> bool {
+    //     Self::from_str(s).is_some()
+    // }
+
     pub fn is_numeric(&self) -> bool {
         *self == Self::I8
             || *self == Self::I16
@@ -87,8 +88,39 @@ impl EvaluatedType {
             || *self == Self::USize
             || *self == Self::Integer
     }
+
     pub fn is_floating(&self) -> bool {
         *self == Self::F32 || *self == Self::F64 || *self == Self::FloatingNum
+    }
+
+    pub fn is_concrete(&self) -> bool {
+        match self {
+            Self::Void => true,
+            Self::Never => true,
+            Self::Bool => true,
+            Self::U8 => true,
+            Self::U16 => true,
+            Self::U32 => true,
+            Self::U64 => true,
+            Self::U128 => true,
+            Self::I8 => true,
+            Self::I16 => true,
+            Self::I32 => true,
+            Self::I64 => true,
+            Self::I128 => true,
+            Self::F32 => true,
+            Self::F64 => true,
+            Self::USize => true,
+            Self::ISize => true,
+            Self::Char => true,
+            Self::Rune => true,
+            Self::String => true,
+            Self::ToBeInferred => false,
+            Self::FloatingNum => false,
+            Self::Integer => false,
+            Self::Struct => true,
+            Self::Enum => true,
+        }
     }
 }
 
