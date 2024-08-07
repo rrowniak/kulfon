@@ -275,3 +275,28 @@ pub fn error_numeric_type_for_bin_op(
         at: Some(at)
     }
 }
+
+pub fn error_var_type_not_deduced(
+    at: TextPoint,
+    var_name: &str
+) -> CompileMessage {
+    CompileMessage {
+        kind: MessageKind::Error,
+        msg: "unable to deduce variable type".into(),
+        details: format!("the type of the variable '{var_name}' cannot be deduced. Ensure that the variable is explicitly typed or initialized with a value from which the type can be inferred. For example, declare the variable with a type like 'let myVariable: i32 = 10;' or ensure it is assigned a value that clearly indicates its type."),
+        at: Some(at)
+    }
+}
+
+pub fn error_type_mismatch_var_assign(
+    at: TextPoint,
+    var_name: &str
+) -> CompileMessage {
+    CompileMessage {
+        kind: MessageKind::Error,
+        msg: "type mismatch in variable assignment".into(),
+        details: format!("the type of the variable '{var_name}' does not match the type of the assigned expression. Ensure that the expression's type is compatible with the variable's declared type. For example, if you declare 'let x: bool', you must assign it a boolean value like true or false, not a string or other type. Correct usage: 'let x: bool = true;'"),
+        at: Some(at)
+    }
+}
+

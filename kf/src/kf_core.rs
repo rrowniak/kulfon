@@ -12,11 +12,17 @@ use std::collections::HashMap;
 
 pub struct ScopeLog {
     /// <variable name, type definition>
-    var_decl: HashMap<String, KfType>,
+    var_decl: HashMap<String, VarDefinition>,
     /// transient - can we go back and do a local variable lookup?
     /// e.g. if this is a function call - we can't
     /// e.g. if this ia a while loop - we can
     transient: bool,
+}
+
+#[derive(Clone)]
+pub struct VarDefinition {
+    v_type: KfType,
+    def_at: TextPoint,
 }
 
 pub struct FunDeclaration {
@@ -45,16 +51,25 @@ impl Context {
         self.temp_scope.get_mut(indx).unwrap()
     }
 
-    fn scope_pop(&mut self) {
-        // TODO: check if types have been
+    fn scope_pop(&mut self) -> Vec<(String, VarDefinition)> {
+        // loop over local variables and collect those
+        // for which the types weren't deduced
+        let not_deduced = self
+            .scope_peek()
+            .var_decl
+            .iter()
+            .filter(|(_, v)| !v.v_type.eval_type.is_concrete())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<Vec<(String, VarDefinition)>>();
         self.temp_scope.pop();
+        not_deduced
     }
 
-    fn scope_push_var(&mut self, name: String, details: KfType) {
+    fn scope_push_var(&mut self, name: String, details: VarDefinition) {
         self.scope_peek().var_decl.insert(name, details);
     }
 
-    fn scope_get_var(&mut self, name: &str) -> Option<KfType> {
+    fn scope_get_var(&mut self, name: &str) -> Option<VarDefinition> {
         // lookup scopes up to "non-transient" on
         // lastly check the global scope
         let mut indx = self.temp_scope.len() - 1;
@@ -301,13 +316,27 @@ fn eval_types(n: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol>
                 eval_types(n, ctx)?;
             }
             set_type_void(&mut n.meta_idx, ctx);
-            ctx.scope_pop();
+            let not_deduced_err = ctx
+                .scope_pop()
+                .iter()
+                .map(|(n, t)| comp_msg::error_var_type_not_deduced(t.def_at, n))
+                .collect::<CompileMsgCol>();
+            if not_deduced_err.len() > 0 {
+                return Err(not_deduced_err);
+            }
         }
         ast::Ntype::FnDef(ref mut fndef) => {
             ctx.scope_push(false);
             eval_types(fndef.body.as_mut(), ctx)?;
             set_type_void(&mut n.meta_idx, ctx);
-            ctx.scope_pop();
+            let not_deduced_err = ctx
+                .scope_pop()
+                .iter()
+                .map(|(n, t)| comp_msg::error_var_type_not_deduced(t.def_at, n))
+                .collect::<CompileMsgCol>();
+            if not_deduced_err.len() > 0 {
+                return Err(not_deduced_err);
+            }
         }
         ast::Ntype::FnCall(ref mut name, ref mut args) => {
             calc_type_for_fn_call(&name, args, &mut n.meta_idx, n.at, ctx)?;
@@ -354,7 +383,6 @@ fn eval_types(n: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol>
     }
     Ok(())
 }
-
 ///
 /// Calculate the types for binary logic operators
 /// where types are not propagated up:
@@ -453,7 +481,6 @@ fn calc_type_for_bin_arithmetic_transient_op(
             t,
         )]);
     }
-
     set_type_all_way_down(t.clone(), &a, ctx)?;
     set_type_all_way_down(t.clone(), &b, ctx)?;
     set_type(
@@ -485,7 +512,7 @@ fn calc_type_for_unary_logic_op(
 ///
 fn calc_type_for_unary_arithm_op(
     a: &mut ast::Node,
-    parent: &mut Option<usize>,
+    _parent: &mut Option<usize>,
     at: TextPoint,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
@@ -510,7 +537,7 @@ fn calc_type_for_assign_op(
 ) -> Result<(), CompileMsgCol> {
     eval_types(b, ctx)?;
     if let Some(variable) = ctx.scope_get_var(a) {
-        if !variable.mutable.expect("Must be defined!") {
+        if !variable.v_type.mutable.expect("Must be defined!") {
             return Err(vec![comp_msg::error_assign_to_immutable(at)]);
         }
         // TODO: check types equality
@@ -526,7 +553,7 @@ fn calc_type_for_assign_op(
 ///
 fn calc_type_for_bool_cond(
     expr: &mut ast::Node,
-    parent: &mut Option<usize>,
+    _parent: &mut Option<usize>,
     at: TextPoint,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
@@ -626,32 +653,85 @@ fn calc_type_for_fn_call(
 ///
 /// Calculate type for variable definition:
 /// let a: type1 = expr; //or
-/// let a = expr;
+/// let a = expr; // assign expr type to a
 ///
 fn calc_type_for_var_def(
     vardef: &mut ast::VarDef,
     parent: &mut Option<usize>,
-    _at: TextPoint,
+    at: TextPoint,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    match &mut vardef.expr {
+    // evaluate and get the expression type
+    let expr_type = match &mut vardef.expr {
         Some(expr) => {
             eval_types(expr.as_mut(), ctx)?;
+            get_side_node(expr, ctx)
         }
-        None => {}
-    }
-    let kf_t = KfType {
+        None => None,
+    };
+    // is there explicit variable type?
+    let mut kf_t = KfType {
         mutable: Some(vardef.mutable),
         eval_type: match &vardef.vartype {
-            // TODO:
             Some(vd) => match EvaluatedType::from_str(&vd.typename().unwrap()) {
-                Some(eval_t) => eval_t,
-                None => EvaluatedType::ToBeInferred,
+                Some(eval_t) => {
+                    // expression type should match the explicit type
+                    eval_t
+                }
+                // it can be a struct or enum
+                None => {
+                    // it can be still a mismatch if e.g. expression type is int
+                    EvaluatedType::ToBeInferred
+                }
             },
-            None => EvaluatedType::ToBeInferred,
+            None => {
+                // type is not defined, check if it can be inferred
+                // from the expression
+                EvaluatedType::ToBeInferred
+            }
         },
     };
-    ctx.scope_push_var(vardef.name.clone(), kf_t);
+    // check if the expr type matches the explicitly defined one
+    match expr_type {
+        Some(expr_type) => {
+            let eq = compare_types(&kf_t.eval_type, &expr_type.eval_type.eval_type);
+            match eq {
+                TypeComp::Equal => {
+                    // great, nothing to be done
+                }
+                TypeComp::Compliant(t) => {
+                    // one side needs to be updated/promoted
+                    if kf_t.eval_type == t {
+                        // update expression types
+                        if let Some(expr) = &vardef.expr {
+                            set_type_all_way_down(t, expr.as_ref(), ctx)?;
+                        }
+                    } else {
+                        // update explicit variable type
+                        kf_t.eval_type = t;
+                    }
+                }
+                TypeComp::Different => {
+                    // obviously an error
+                    return Err(vec![comp_msg::error_type_mismatch_var_assign(
+                        at,
+                        &vardef.name,
+                    )]);
+                }
+            }
+        }
+        None => {
+            // there is no expression, just a variable declaration
+        }
+    }
+    ctx.scope_push_var(
+        vardef.name.clone(),
+        VarDefinition {
+            v_type: kf_t,
+            def_at: at,
+        },
+    );
+    // whole expression evaluates to void
     set_type_void(parent, ctx);
     Ok(())
 }
@@ -676,7 +756,7 @@ fn calc_type_for_literal(
                 ctx,
                 KfType {
                     mutable,
-                    eval_type: variable.eval_type,
+                    eval_type: variable.v_type.eval_type,
                 },
                 v,
             );
@@ -696,6 +776,53 @@ fn calc_type_for_literal(
         );
     }
     Ok(())
+}
+/// Result of [`EvaluatedType`]s comparison
+enum TypeComp {
+    /// The types are equal
+    Equal,
+    /// One of the type is to be inferred, returned 'stronger' type
+    Compliant(EvaluatedType),
+    /// Completely different types
+    Different,
+}
+/// Compares two [`EvaluatedType`] types. Additional calculation is done
+/// if one of the type is to be inferred like [`EvaluatedType::ToBeInferred`],
+/// [`EvaluatedType::Integer`] or [`EvaluatedType::FloatingNum`]
+///    assert_eq!(compare_types(EvaluatedType::Integer, EvaluatedType::ToBeInferred) EvaluatedType::Integer);
+fn compare_types(a: &EvaluatedType, b: &EvaluatedType) -> TypeComp {
+    if a == b {
+        return TypeComp::Equal;
+    }
+    if a.is_concrete() && b.is_concrete() {
+        return TypeComp::Different;
+    }
+    // now inferred case
+    for (a, b) in &[(a, b), (b, a)] {
+        if a.is_concrete() {
+            // b must be inferred, three options:
+            match b {
+                EvaluatedType::ToBeInferred => return TypeComp::Compliant((*a).clone()),
+                EvaluatedType::FloatingNum => {
+                    // we need to check if the concrete type is compatible with FloatingNum
+                    if a.is_floating() {
+                        return TypeComp::Compliant((*a).clone());
+                    } else {
+                        return TypeComp::Different;
+                    }
+                }
+                EvaluatedType::Integer => {
+                    if a.is_numeric() {
+                        return TypeComp::Compliant((*a).clone());
+                    } else {
+                        return TypeComp::Different;
+                    }
+                }
+                _ => panic!("Type not 'to be inferred' should be here: {b:?}"),
+            }
+        }
+    }
+    TypeComp::Different
 }
 
 fn set_type(meta_idx: &mut Option<usize>, ctx: &mut Context, t: KfType, v: Option<EvaluatedValue>) {
@@ -1065,13 +1192,16 @@ mod tests {
 
     #[test]
     fn test_positive_cases() {
+        // should compile
         let tcs = [
-            "let v = 1 + 2;",
+            "let v: i64 = 1 + 2;",
             "fn ab() {}",
             "fn a() {} fn b() { a(); }",
             "fn a() { a(); }",
             "fn a() { let b: i32 = 0; if b == 0 {}}",
             "fn a() { let mut b: i32 = 0; if true {b = 1;}}",
+            "fn a() {let b = false; if b {} }",
+            "fn a() {let b = 1; let c: i8 = 0; if b == c {} }",
         ];
         for c in tcs {
             let (ast, built_in) = parse_code(c).unwrap();
@@ -1091,6 +1221,7 @@ mod tests {
 
     #[test]
     fn test_negative_cases() {
+        // shouldn't compile
         let tcs = [
             r#"fn a(){1 == "s"; }"#,
             "let v = 1 == \"srt\";",
