@@ -91,6 +91,27 @@ impl Context {
             None
         }
     }
+
+    fn scope_get_var_mut(&mut self, name: &str) -> Option<&mut VarDefinition> {
+        // lookup scopes up to "non-transient" on
+        // lastly check the global scope
+        let mut indx = self.temp_scope.len() - 1;
+        while indx > 0 {
+            if self.temp_scope[indx].var_decl.get_mut(name).is_some() {
+                return self.temp_scope[indx].var_decl.get_mut(name);
+            }
+
+            if !self.temp_scope[indx].transient {
+                break;
+            }
+            indx -= 1;
+        }
+        if let Some(details) = self.temp_scope[0].var_decl.get_mut(name) {
+            Some(details)
+        } else {
+            None
+        }
+    }
 }
 
 pub struct InterRepr {
@@ -398,6 +419,7 @@ fn calc_type_for_bin_nontransient_op(
     eval_types(a, ctx)?;
     eval_types(b, ctx)?;
     let t = determine_type_for_a_b(&a, &b, at, ctx)?;
+    // println!("type ab = {t:?}");
     set_type_all_way_down(t.clone(), &a, ctx)?;
     set_type_all_way_down(t, &b, ctx)?;
     let val = None;
@@ -536,11 +558,34 @@ fn calc_type_for_assign_op(
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
     eval_types(b, ctx)?;
-    if let Some(variable) = ctx.scope_get_var(a) {
+    if let Some(ref mut variable) = ctx.scope_get_var(a) {
         if !variable.v_type.mutable.expect("Must be defined!") {
             return Err(vec![comp_msg::error_assign_to_immutable(at)]);
         }
-        // TODO: check types equality
+        // compare variable & expression types
+        let expr_side_node = get_side_node(b, ctx).expect("Side node should have been calculated");
+        let expr_type = &expr_side_node.eval_type.eval_type;
+        let cmp_res = compare_types(&variable.v_type.eval_type, expr_type);
+        match cmp_res {
+            TypeComp::Equal => {}
+            TypeComp::Compliant(ref t) => {
+                // we have to update either expression or variable type
+                if t == expr_type {
+                    // we need to update variable type
+                    variable.v_type.eval_type = t.clone();
+                } else {
+                    set_type_all_way_down(t.clone(), b, ctx)?;
+                }
+            }
+            TypeComp::Different => {
+                return Err(vec![comp_msg::error_type_mismatch_var_assign(
+                    at,
+                    a,
+                    &variable.v_type.eval_type,
+                    expr_type,
+                )]);
+            }
+        }
     } else {
         return Err(vec![comp_msg::error_undeclared_var(at)]);
     }
@@ -716,6 +761,8 @@ fn calc_type_for_var_def(
                     return Err(vec![comp_msg::error_type_mismatch_var_assign(
                         at,
                         &vardef.name,
+                        &kf_t.eval_type,
+                        &expr_type.eval_type.eval_type,
                     )]);
                 }
             }
@@ -820,6 +867,9 @@ fn compare_types(a: &EvaluatedType, b: &EvaluatedType) -> TypeComp {
                 }
                 _ => panic!("Type not 'to be inferred' should be here: {b:?}"),
             }
+        } else if *b == &EvaluatedType::ToBeInferred {
+            // both are "to be inferred", the second actually might be FloatingNum or Numeric
+            return TypeComp::Compliant((*a).clone());
         }
     }
     TypeComp::Different
@@ -941,6 +991,14 @@ fn set_type_all_way_down(
         if let ast::Ntype::FnCall(_, _) = n.val {
             // we don't want to change evaluated type for e.g. function parameters
             return Ok(false);
+        }
+        if let ast::Ntype::Literal(ref l) = n.val {
+            // that can be a variable, if so we have to update the cache
+            if let Some(variable) = ctx.scope_get_var_mut(&l) {
+                // TODO: what if variable has already got a concrete type?
+                // println!("Setting type {t:?} to {l}");
+                variable.v_type.eval_type = t.clone();
+            }
         }
         update_type(n, ctx, t.clone());
         Ok(true)
@@ -1202,6 +1260,7 @@ mod tests {
             "fn a() { let mut b: i32 = 0; if true {b = 1;}}",
             "fn a() {let b = false; if b {} }",
             "fn a() {let b = 1; let c: i8 = 0; if b == c {} }",
+            "fn a() {let b = 1; let c: i32 = 0; if b * c == 0 {} }",
         ];
         for c in tcs {
             let (ast, built_in) = parse_code(c).unwrap();

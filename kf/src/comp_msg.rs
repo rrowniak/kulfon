@@ -290,12 +290,14 @@ pub fn error_var_type_not_deduced(
 
 pub fn error_type_mismatch_var_assign(
     at: TextPoint,
-    var_name: &str
+    var_name: &str,
+    type_a: &EvaluatedType,
+    type_b: &EvaluatedType,
 ) -> CompileMessage {
     CompileMessage {
         kind: MessageKind::Error,
         msg: "type mismatch in variable assignment".into(),
-        details: format!("the type of the variable '{var_name}' does not match the type of the assigned expression. Ensure that the expression's type is compatible with the variable's declared type. For example, if you declare 'let x: bool', you must assign it a boolean value like true or false, not a string or other type. Correct usage: 'let x: bool = true;'"),
+        details: format!("the type of the variable '{var_name}' - {type_a:?} does not match the type of the assigned expression - {type_b:?}. Ensure that the expression's type is compatible with the variable's declared type. For example, if you declare 'let x: bool', you must assign it a boolean value like true or false, not a string or other type. Correct usage: 'let x: bool = true;'"),
         at: Some(at)
     }
 }
