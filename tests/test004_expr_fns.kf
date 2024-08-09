@@ -1,0 +1,17 @@
+//0123456789
+fn main() {
+    let i = 0;
+    let j: i32 = 10;
+
+    if i * j == 0 {
+        print("{}", i);
+    } else {
+        print("{}", "this is wrong");
+    }
+
+    let mut k: i32 = 1;
+    while k < 10 {
+        print("{}", k);
+        k = k + 1;
+    }
+}

@@ -23,6 +23,7 @@ pub struct ScopeLog {
 pub struct VarDefinition {
     v_type: KfType,
     def_at: TextPoint,
+    side_node_indx: usize,
 }
 
 pub struct FunDeclaration {
@@ -111,6 +112,20 @@ impl Context {
         } else {
             None
         }
+    }
+
+    fn update_var_type(&mut self, name: &str, t: EvaluatedType) -> Option<EvaluatedType> {
+        // println!("Updating variable {name} to {t:?}");
+        let (t, indx) = if let Some(v) = self.scope_get_var_mut(name) {
+            (
+                std::mem::replace(&mut v.v_type.eval_type, t),
+                v.side_node_indx,
+            )
+        } else {
+            return None;
+        };
+        self.side_nodes[indx].eval_type.eval_type = t.clone();
+        Some(t)
     }
 }
 
@@ -558,7 +573,7 @@ fn calc_type_for_assign_op(
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
     eval_types(b, ctx)?;
-    if let Some(ref mut variable) = ctx.scope_get_var(a) {
+    if let Some(variable) = ctx.scope_get_var(a) {
         if !variable.v_type.mutable.expect("Must be defined!") {
             return Err(vec![comp_msg::error_assign_to_immutable(at)]);
         }
@@ -572,7 +587,7 @@ fn calc_type_for_assign_op(
                 // we have to update either expression or variable type
                 if t == expr_type {
                     // we need to update variable type
-                    variable.v_type.eval_type = t.clone();
+                    ctx.update_var_type(a, t.clone());
                 } else {
                     set_type_all_way_down(t.clone(), b, ctx)?;
                 }
@@ -771,15 +786,16 @@ fn calc_type_for_var_def(
             // there is no expression, just a variable declaration
         }
     }
+    // whole expression evaluates to void
+    set_type_void(parent, ctx);
     ctx.scope_push_var(
         vardef.name.clone(),
         VarDefinition {
             v_type: kf_t,
             def_at: at,
+            side_node_indx: parent.expect("Side node not defined for 'variable definition'"),
         },
     );
-    // whole expression evaluates to void
-    set_type_void(parent, ctx);
     Ok(())
 }
 ///
@@ -994,11 +1010,7 @@ fn set_type_all_way_down(
         }
         if let ast::Ntype::Literal(ref l) = n.val {
             // that can be a variable, if so we have to update the cache
-            if let Some(variable) = ctx.scope_get_var_mut(&l) {
-                // TODO: what if variable has already got a concrete type?
-                // println!("Setting type {t:?} to {l}");
-                variable.v_type.eval_type = t.clone();
-            }
+            ctx.update_var_type(&l, t.clone());
         }
         update_type(n, ctx, t.clone());
         Ok(true)

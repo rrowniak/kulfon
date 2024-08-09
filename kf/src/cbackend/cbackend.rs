@@ -66,7 +66,7 @@ struct CGen<'a> {
     mid: &'a kf_core::InterRepr,
     ctx: CGenCtx,
     scope_depth: usize,
-    loc_variables: Vec<Vec<ast::VarDef>>,
+    loc_variables: Vec<Vec<(usize, ast::VarDef)>>,
 }
 
 impl<'a> CGen<'a> {
@@ -181,7 +181,7 @@ impl<'a> CGen<'a> {
             ast::Ntype::Loop(loop_) => self.transform_loop(loop_, indent),
             ast::Ntype::VarDef(var) => {
                 match self.loc_variables.last_mut() {
-                    Some(v) => v.push(var.clone()),
+                    Some(v) => v.push((expr.meta_idx.unwrap(), var.clone())),
                     None => panic!("No stack for this scope!"),
                 }
                 Ok("".into())
@@ -241,9 +241,9 @@ impl<'a> CGen<'a> {
         }
         let mut loc_vars = String::new();
         let loc_scope_vars = self.loc_variables.pop().unwrap();
-        for v in loc_scope_vars {
+        for (i, v) in loc_scope_vars {
             loc_vars += "\n";
-            loc_vars += self.transform_var_def(&v, indent)?.as_str();
+            loc_vars += self.transform_var_def(&v, i, indent)?.as_str();
             loc_vars += ";";
         }
         Ok(format!("{loc_vars}{scope_str}"))
@@ -305,7 +305,12 @@ impl<'a> CGen<'a> {
         Ok(ret)
     }
 
-    fn transform_var_def(&mut self, var: &ast::VarDef, indent: usize) -> ResultC {
+    fn transform_var_def(
+        &mut self,
+        var: &ast::VarDef,
+        side_node_indx: usize,
+        indent: usize,
+    ) -> ResultC {
         let mut ret = String::new();
         let indent_s = self.indent_str(indent);
         ret += indent_s.as_str();
@@ -313,24 +318,22 @@ impl<'a> CGen<'a> {
             ret += "const ";
         }
         let varname = &var.name;
-        let type_kf = var
-            .vartype
-            .clone()
-            .expect(&format!("Type for {varname} must be deduced"));
-        // TODO:
-        if let Some(kf_built_in) =
-            type_system::EvaluatedType::from_str(&type_kf.typename().unwrap())
-        {
-            // this is a built-in KF type, convert it to C type
-            let type_c =
-                generators::generate_type(kf_built_in.clone(), &mut self.ctx).expect(&format!(
-                    "Fatal error while convertig KF built-in type {kf_built_in:?} into C-type",
-                ));
-            ret += format!("{type_c} {varname}").as_str();
+        let kf_built_in = if let Some(vardef_type) = &var.vartype {
+            match vardef_type.type_id {
+                ast::TypeKind::JustName(ref s) => type_system::EvaluatedType::from_str(s)
+                    .expect("Should be possible to evaluate a type"),
+                _ => todo!(),
+            }
         } else {
-            // presumably a custom type
-            todo!();
-        }
+            self.mid.ctx.side_nodes[side_node_indx]
+                .eval_type
+                .eval_type
+                .clone()
+        };
+        let type_c = generators::generate_type(kf_built_in.clone(), &mut self.ctx).expect(
+            &format!("Fatal error while convertig KF built-in type {kf_built_in:?} into C-type",),
+        );
+        ret += format!("{type_c} {varname}").as_str();
 
         let var_expr = var.expr.clone().expect("Uninitialized variable detected");
         ret += format!(" = {}", self.process_ast_node(&var_expr, 0)?).as_str();

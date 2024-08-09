@@ -191,15 +191,52 @@ fn convert_args_to_c_format(
             return format!("\"Syntax error: no placeholder {{}} for {arg_s}\"");
         }
         ret.push(match t.eval_type {
+            EvaluatedType::Void | EvaluatedType::Never => {
+                panic!("What the hell, trying to print void or never type?")
+            }
             EvaluatedType::Bool => {
                 literal_s = literal_s.replacen("{}", "%s", 1);
                 format!("({arg_s})?\"true\":\"false\"")
             }
+            EvaluatedType::U8
+            | EvaluatedType::U16
+            | EvaluatedType::U32
+            | EvaluatedType::U64
+            | EvaluatedType::USize => {
+                literal_s = literal_s.replacen("{}", "%u", 1);
+                format!("{arg_s}")
+            }
+            EvaluatedType::U128 => todo!(),
+            EvaluatedType::I8
+            | EvaluatedType::I16
+            | EvaluatedType::I32
+            | EvaluatedType::I64
+            | EvaluatedType::ISize => {
+                literal_s = literal_s.replacen("{}", "%d", 1);
+                format!("{arg_s}")
+            }
+            EvaluatedType::I128 => todo!(),
+            EvaluatedType::F32 | EvaluatedType::F64 => {
+                literal_s = literal_s.replacen("{}", "%f", 1);
+                format!("{arg_s}")
+            }
+            EvaluatedType::Char => {
+                literal_s = literal_s.replacen("{}", "%c", 1);
+                format!("{arg_s}")
+            }
+            EvaluatedType::Rune => {
+                todo!()
+            }
             EvaluatedType::String => {
                 literal_s = literal_s.replacen("{}", "%s", 1);
-                format!("\"{arg_s}\"")
+                format!("{arg_s}")
             }
-            _ => return String::from(r#""Syntax error: type not supported""#),
+            EvaluatedType::ToBeInferred => panic!("ToBeInferred cannot be printed!"),
+            EvaluatedType::FloatingNum | EvaluatedType::Integer => {
+                panic!("ToBeInferred fl & num cannot be printed!")
+            }
+            EvaluatedType::Struct => todo!(),
+            EvaluatedType::Enum => todo!(),
         });
     }
     ret.insert(0, format!("\"{literal_s}\""));
