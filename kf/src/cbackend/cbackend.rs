@@ -66,7 +66,7 @@ struct CGen<'a> {
     mid: &'a kf_core::InterRepr,
     ctx: CGenCtx,
     scope_depth: usize,
-    loc_variables: Vec<Vec<(usize, ast::VarDef)>>,
+    loc_variables: Vec<Vec<(kf_core::SideNodeRef, ast::VarDef)>>,
 }
 
 impl<'a> CGen<'a> {
@@ -80,93 +80,93 @@ impl<'a> CGen<'a> {
     }
 
     fn gen(&mut self) -> ResultC {
-        let code = self.process_ast_node(&self.mid.syntree, 0)?;
+        let code = self.process_ast_node(&self.mid.syntree, self.mid.syntree.root, 0)?;
         let mut ret = self.ctx.generate_context_code();
         ret += code.as_str();
         Ok(ret)
     }
 
-    fn process_ast_node(&mut self, expr: &ast::Node, indent: usize) -> ResultC {
-        match &expr.val {
+    fn process_ast_node(&mut self, tree: &ast::Tree, expr: ast::NodeRef, indent: usize) -> ResultC {
+        match &tree.get(expr).val {
             ast::Ntype::Scope(scope) => {
                 self.scope_depth += 1;
-                let r = self.transform_scope(&scope, indent);
+                let r = self.transform_scope(tree, &scope, indent);
                 self.scope_depth -= 1;
                 r
             }
-            ast::Ntype::FnDef(fn_def) => self.transform_fn(&fn_def, indent),
+            ast::Ntype::FnDef(fn_def) => self.transform_fn(tree, &fn_def, indent),
             ast::Ntype::FnCall(fn_name, fn_args) => {
-                self.transform_fn_call(fn_name, fn_args, indent)
+                self.transform_fn_call(tree, &fn_name, &fn_args, indent)
             }
             ast::Ntype::Eq(a, b) => Ok(format!(
                 "{}{} == {}",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Neq(a, b) => Ok(format!(
                 "{}{} != {}",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Gt(a, b) => Ok(format!(
                 "{}{} > {}",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Ge(a, b) => Ok(format!(
                 "{}{} >= {}",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Lt(a, b) => Ok(format!(
                 "{}{} < {}",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Le(a, b) => Ok(format!(
                 "{}{} <= {}",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Plus(a, b) => Ok(format!(
                 "{}({} + {})",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Minus(a, b) => Ok(format!(
                 "{}({} - {})",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Slash(a, b) => Ok(format!(
                 "{}({} / {})",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Star(a, b) => Ok(format!(
                 "{}({} * {})",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
-                self.process_ast_node(b, 0)?
+                self.process_ast_node(tree, *a, 0)?,
+                self.process_ast_node(tree, *b, 0)?
             )),
             ast::Ntype::Bang(a) => Ok(format!(
                 "{}!{}",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
+                self.process_ast_node(tree, *a, 0)?,
             )),
             ast::Ntype::UMinus(a) => Ok(format!(
                 "{}-{}",
                 self.indent_str(indent),
-                self.process_ast_node(a, 0)?,
+                self.process_ast_node(tree, *a, 0)?,
             )),
             ast::Ntype::Break => Ok(format!("{}break;", self.indent_str(indent))),
             ast::Ntype::Continue => Ok(format!("{}continue;", self.indent_str(indent))),
@@ -175,13 +175,13 @@ impl<'a> CGen<'a> {
             ast::Ntype::Impl(_) => unimplemented!(),
             ast::Ntype::False => Ok(generators::gen_bool_var(false, &mut self.ctx).into()),
             ast::Ntype::True => Ok(generators::gen_bool_var(true, &mut self.ctx).into()),
-            ast::Ntype::If(if_) => self.transform_if(if_, indent),
-            ast::Ntype::For(for_) => self.transform_for(for_, indent),
-            ast::Ntype::While(while_) => self.transform_while(while_, indent),
-            ast::Ntype::Loop(loop_) => self.transform_loop(loop_, indent),
+            ast::Ntype::If(if_) => self.transform_if(tree, &if_, indent),
+            ast::Ntype::For(for_) => self.transform_for(tree, &for_, indent),
+            ast::Ntype::While(while_) => self.transform_while(tree, &while_, indent),
+            ast::Ntype::Loop(loop_) => self.transform_loop(tree, &loop_, indent),
             ast::Ntype::VarDef(var) => {
                 match self.loc_variables.last_mut() {
-                    Some(v) => v.push((expr.meta_idx.unwrap(), var.clone())),
+                    Some(v) => v.push((kf_core::SideNodeRef::from_node_ref(expr), var.clone())),
                     None => panic!("No stack for this scope!"),
                 }
                 Ok("".into())
@@ -190,7 +190,7 @@ impl<'a> CGen<'a> {
                 "{}{} = {};",
                 self.indent_str(indent),
                 left,
-                self.process_ast_node(right, 0)?
+                self.process_ast_node(tree, *right, 0)?
             )),
             ast::Ntype::String(s) => Ok(format!("{}\"{}\"", self.indent_str(indent), s)),
             ast::Ntype::Char(s) => Ok(format!("'{s}'")),
@@ -199,7 +199,7 @@ impl<'a> CGen<'a> {
         }
     }
 
-    fn transform_fn(&mut self, fn_def: &ast::Fun, indent: usize) -> ResultC {
+    fn transform_fn(&mut self, tree: &ast::Tree, fn_def: &ast::Fun, indent: usize) -> ResultC {
         let indent_s = self.indent_str(indent);
         // TODO:
         let ret_type = if fn_def.ret.typename().unwrap().len() == 0 {
@@ -209,7 +209,7 @@ impl<'a> CGen<'a> {
             fn_def.ret.typename().unwrap().clone()
         };
         let args = String::new();
-        let body = self.process_ast_node(&fn_def.body, indent + INDENT_LEVEL)?;
+        let body = self.process_ast_node(tree, fn_def.body, indent + INDENT_LEVEL)?;
         let c_fn = if self.scope_depth == 1 && fn_def.name == "main" {
             // this is a special case - main function
             if fn_def.ret.typename().unwrap().len() != 0 {
@@ -232,29 +232,40 @@ impl<'a> CGen<'a> {
         Ok(c_fn)
     }
 
-    fn transform_scope(&mut self, scope_nodes: &Vec<ast::Node>, indent: usize) -> ResultC {
+    fn transform_scope(
+        &mut self,
+        tree: &ast::Tree,
+        scope_nodes: &Vec<ast::NodeRef>,
+        indent: usize,
+    ) -> ResultC {
         self.loc_variables.push(Vec::new());
         let mut scope_str = String::new();
         for e in scope_nodes.iter() {
             scope_str += "\n";
-            scope_str += &self.process_ast_node(&e, indent)?;
+            scope_str += &self.process_ast_node(tree, *e, indent)?;
         }
         let mut loc_vars = String::new();
         let loc_scope_vars = self.loc_variables.pop().unwrap();
         for (i, v) in loc_scope_vars {
             loc_vars += "\n";
-            loc_vars += self.transform_var_def(&v, i, indent)?.as_str();
+            loc_vars += self.transform_var_def(tree, &v, i, indent)?.as_str();
             loc_vars += ";";
         }
         Ok(format!("{loc_vars}{scope_str}"))
     }
 
-    fn transform_fn_call(&mut self, name: &str, args: &Vec<ast::Node>, indent: usize) -> ResultC {
+    fn transform_fn_call(
+        &mut self,
+        tree: &ast::Tree,
+        name: &str,
+        args: &Vec<ast::NodeRef>,
+        indent: usize,
+    ) -> ResultC {
         let indent_s = self.indent_str(indent);
         let mut args_v = Vec::new();
         for e in args.iter() {
-            let arg_s = self.process_ast_node(&e, 0)?;
-            let side_node = kf_core::get_side_node(e, &self.mid.ctx).unwrap();
+            let arg_s = self.process_ast_node(tree, *e, 0)?;
+            let side_node = kf_core::get_side_node(*e, &self.mid.ctx);
             let eval_t = side_node.eval_type.clone();
             let eval_v = side_node.eval_val.clone();
             args_v.push((arg_s, eval_t, eval_v));
@@ -264,39 +275,39 @@ impl<'a> CGen<'a> {
         Ok(statement)
     }
 
-    fn transform_if(&mut self, if_: &ast::If, indent: usize) -> ResultC {
-        let cond = self.process_ast_node(&if_.cond, 0)?;
-        let body = self.process_ast_node(&if_.body, indent + INDENT_LEVEL)?;
+    fn transform_if(&mut self, tree: &ast::Tree, if_: &ast::If, indent: usize) -> ResultC {
+        let cond = self.process_ast_node(tree, if_.cond, 0)?;
+        let body = self.process_ast_node(tree, if_.body, indent + INDENT_LEVEL)?;
         let indent_s = self.indent_str(indent);
         let mut ret = format!("{indent_s}if ({cond}) {{{body}\n{indent_s}}}");
         // elifs?
         for elif in if_.elif.iter() {
-            let cond = self.process_ast_node(&elif.cond, 0)?;
-            let body = self.process_ast_node(&elif.body, indent + INDENT_LEVEL)?;
+            let cond = self.process_ast_node(tree, elif.cond, 0)?;
+            let body = self.process_ast_node(tree, elif.body, indent + INDENT_LEVEL)?;
             ret += &format!(" else if ({cond}) {{\n{body}\n{indent_s}}}");
         }
         // else?
         if let Some(else_) = &if_.else_body {
-            let body = self.process_ast_node(&else_, indent + INDENT_LEVEL)?;
+            let body = self.process_ast_node(tree, *else_, indent + INDENT_LEVEL)?;
             ret += &format!(" else {{\n{body}\n{indent_s}}}");
         }
         Ok(ret)
     }
 
-    fn transform_for(&mut self, _for_: &ast::For, _indent: usize) -> ResultC {
+    fn transform_for(&mut self, tree: &ast::Tree, _for_: &ast::For, _indent: usize) -> ResultC {
         todo!()
     }
 
-    fn transform_while(&mut self, while_: &ast::While, indent: usize) -> ResultC {
-        let cond = self.process_ast_node(&while_.cond, 0)?;
-        let body = self.process_ast_node(&while_.body, indent + INDENT_LEVEL)?;
+    fn transform_while(&mut self, tree: &ast::Tree, while_: &ast::While, indent: usize) -> ResultC {
+        let cond = self.process_ast_node(tree, while_.cond, 0)?;
+        let body = self.process_ast_node(tree, while_.body, indent + INDENT_LEVEL)?;
         let indent_s = self.indent_str(indent);
         let ret = format!("{indent_s}while ({cond}) {{{body}\n{indent_s}}}");
         Ok(ret)
     }
 
-    fn transform_loop(&mut self, loop_: &ast::Loop, indent: usize) -> ResultC {
-        let body = self.process_ast_node(&loop_.body, indent + INDENT_LEVEL)?;
+    fn transform_loop(&mut self, tree: &ast::Tree, loop_: &ast::Loop, indent: usize) -> ResultC {
+        let body = self.process_ast_node(tree, loop_.body, indent + INDENT_LEVEL)?;
         let indent_s = self.indent_str(indent);
         let ret = format!(
             "{indent_s}while ({}) {{{body}\n{indent_s}}}",
@@ -307,8 +318,9 @@ impl<'a> CGen<'a> {
 
     fn transform_var_def(
         &mut self,
+        tree: &ast::Tree,
         var: &ast::VarDef,
-        side_node_indx: usize,
+        side_node_indx: kf_core::SideNodeRef,
         indent: usize,
     ) -> ResultC {
         let mut ret = String::new();
@@ -325,7 +337,9 @@ impl<'a> CGen<'a> {
                 _ => todo!(),
             }
         } else {
-            self.mid.ctx.side_nodes[side_node_indx]
+            self.mid
+                .ctx
+                .get_side_node(side_node_indx)
                 .eval_type
                 .eval_type
                 .clone()
@@ -336,7 +350,7 @@ impl<'a> CGen<'a> {
         ret += format!("{type_c} {varname}").as_str();
 
         let var_expr = var.expr.clone().expect("Uninitialized variable detected");
-        ret += format!(" = {}", self.process_ast_node(&var_expr, 0)?).as_str();
+        ret += format!(" = {}", self.process_ast_node(tree, var_expr, 0)?).as_str();
 
         Ok(ret)
     }

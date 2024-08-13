@@ -6,13 +6,27 @@
 // ---------------------------------------------------
 use crate::comp_msg::TextPoint;
 
+// tree structure will be represented as a flast AST
+// https://www.cs.cornell.edu/~asampson/blog/flattening.html
+
+#[derive(Copy, Clone, Debug)]
+pub struct NodeRef(i32);
+
+impl NodeRef {
+    pub fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
+pub type NodeRefs = Vec<NodeRef>;
+
 #[derive(Debug, Clone)]
 pub struct Fun {
     pub name: String,
     pub args: Vec<VarDecl>,
     pub variadic: bool,
     pub ret: TypeDecl,
-    pub body: Box<Node>,
+    pub body: NodeRef,
 }
 #[derive(Debug, Clone)]
 pub enum RefType {
@@ -22,7 +36,7 @@ pub enum RefType {
 
 #[derive(Debug, Clone)]
 pub enum TypeKind {
-    Array(Box<TypeDecl>, Option<Box<Node>>),
+    Array(Box<TypeDecl>, Option<NodeRef>),
     Slice(Box<TypeDecl>),
     JustName(String),
     JustNameGeneric(String, Vec<TypeDecl>),
@@ -62,34 +76,34 @@ pub struct VarDecl {
 
 #[derive(Debug, Clone)]
 pub struct Elif {
-    pub cond: Box<Node>,
-    pub body: Box<Node>,
+    pub cond: NodeRef,
+    pub body: NodeRef,
 }
 
 #[derive(Debug, Clone)]
 pub struct If {
-    pub cond: Box<Node>,
-    pub body: Box<Node>,
+    pub cond: NodeRef,
+    pub body: NodeRef,
     pub elif: Vec<Elif>,
-    pub else_body: Option<Box<Node>>,
+    pub else_body: Option<NodeRef>,
 }
 
 #[derive(Debug, Clone)]
 pub struct For {
     pub var_pattern: String,
-    pub in_expr: Box<Node>,
-    pub body: Box<Node>,
+    pub in_expr: NodeRef,
+    pub body: NodeRef,
 }
 
 #[derive(Debug, Clone)]
 pub struct While {
-    pub cond: Box<Node>,
-    pub body: Box<Node>,
+    pub cond: NodeRef,
+    pub body: NodeRef,
 }
 
 #[derive(Debug, Clone)]
 pub struct Loop {
-    pub body: Box<Node>,
+    pub body: NodeRef,
 }
 
 #[derive(Debug, Clone)]
@@ -97,7 +111,7 @@ pub struct VarDef {
     pub mutable: bool,
     pub name: String,
     pub vartype: Option<TypeDecl>,
-    pub expr: Option<Box<Node>>,
+    pub expr: Option<NodeRef>,
 }
 
 #[derive(Debug, Clone)]
@@ -117,14 +131,38 @@ pub struct Enum {
 #[derive(Debug, Clone)]
 pub struct Impl {
     pub name: String,
-    pub scope: Vec<Node>,
+    pub scope: NodeRefs,
+}
+
+#[derive(Debug, Clone)]
+pub struct Tree {
+    pub root: NodeRef,
+    pub flat: Vec<Node>,
+}
+
+impl Tree {
+    pub fn new(cap: usize) -> Self {
+        Self {
+            root: NodeRef(0), // kinda dodgy as this is no valid Id so far
+            flat: Vec::with_capacity(cap),
+        }
+    }
+    pub fn push(&mut self, node: Node) -> NodeRef {
+        let nref = NodeRef(self.flat.len() as i32);
+        self.flat.push(node);
+        nref
+    }
+
+    pub fn get(&self, nref: NodeRef) -> &Node {
+        &self.flat[nref.0 as usize]
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Node {
     pub val: Ntype,
     pub at: TextPoint,
-    pub meta_idx: Option<usize>,
+    // pub meta_idx: Option<usize>,
 }
 
 impl Node {
@@ -132,7 +170,7 @@ impl Node {
         Node {
             val,
             at,
-            meta_idx: None,
+            // meta_idx: None,
         }
     }
 }
@@ -140,20 +178,20 @@ impl Node {
 #[derive(Debug, Clone)]
 pub enum Ntype {
     // operators
-    Eq(Box<Node>, Box<Node>),
-    Neq(Box<Node>, Box<Node>),
-    Gt(Box<Node>, Box<Node>),
-    Ge(Box<Node>, Box<Node>),
-    Lt(Box<Node>, Box<Node>),
-    Le(Box<Node>, Box<Node>),
-    Plus(Box<Node>, Box<Node>),
-    Minus(Box<Node>, Box<Node>),
-    Slash(Box<Node>, Box<Node>),
-    Star(Box<Node>, Box<Node>),
-    Bang(Box<Node>),
-    UMinus(Box<Node>), // unary minus
+    Eq(NodeRef, NodeRef),
+    Neq(NodeRef, NodeRef),
+    Gt(NodeRef, NodeRef),
+    Ge(NodeRef, NodeRef),
+    Lt(NodeRef, NodeRef),
+    Le(NodeRef, NodeRef),
+    Plus(NodeRef, NodeRef),
+    Minus(NodeRef, NodeRef),
+    Slash(NodeRef, NodeRef),
+    Star(NodeRef, NodeRef),
+    Bang(NodeRef),
+    UMinus(NodeRef), // unary minus
     // assign
-    Assign(String, Box<Node>),
+    Assign(String, NodeRef),
     // control flow
     If(If),
     For(For),
@@ -165,9 +203,9 @@ pub enum Ntype {
     Struct(Struct),
     Enum(Enum),
     Impl(Impl),
-    Scope(Vec<Node>),
+    Scope(NodeRefs),
     FnDef(Fun),
-    FnCall(String, Vec<Node>),
+    FnCall(String, NodeRefs),
     VarDef(VarDef),
     // terminals
     String(String),

@@ -48,7 +48,7 @@ fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErr
     (kftokens, errors)
 }
 
-pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::Node> {
+pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::Tree> {
     let (tokens, errors) = convert_tok_to_kftok(tokens);
     if errors.len() > 0 {
         return Err(errors);
@@ -59,40 +59,46 @@ pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::Node> {
 
 struct KfParser<'a> {
     iter: ParseIter<'a, KfToken>,
+    // estimated AST tree size
+    cap: usize,
 }
 
 impl<'a> KfParser<'a> {
     fn new(tokens: &[KfToken]) -> KfParser {
         KfParser {
             iter: ParseIter::new(tokens),
+            cap: tokens.len()
         }
     }
 
-    fn parse_prog(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_prog(&mut self) -> ParsingResult<ast::Tree> {
+        let mut tree = ast::Tree::new(self.cap);
         self.iter.next();
-        let mut global_scope = Vec::new();
+        let mut global_scope = ast::NodeRefs::new();
         while self.iter.peek().is_some() {
-            global_scope.push(self.parse_prog_statement()?);
+            global_scope.push(self.parse_prog_statement(&mut tree)?);
         }
-        Ok(ast::Node::new(
+        let root = ast::Node::new(
             ast::Ntype::Scope(global_scope),
             TextPoint { line: 0, col: 0 },
-        ))
+        );
+        tree.root = tree.push(root);
+            Ok(tree)
     }
 
-    fn parse_prog_statement(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_prog_statement(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         match &self.get_curr()?.kind {
-            KfTokKind::KwFn => self.parse_fun(),
+            KfTokKind::KwFn => self.parse_fun(tree),
             KfTokKind::KwLet => {
                 if self.check_tok_sequence(&[KfTokKind::KwLet, KfTokKind::KwMut]) {
-                    self.parse_mut_var()
+                    self.parse_mut_var(tree)
                 } else {
-                    self.parse_var()
+                    self.parse_var(tree)
                 }
             }
-            KfTokKind::KwStruct => self.parse_struct(),
-            KfTokKind::KwEnum => self.parse_enum(),
-            KfTokKind::KwImpl => self.parse_impl(),
+            KfTokKind::KwStruct => self.parse_struct(tree),
+            KfTokKind::KwEnum => self.parse_enum(tree),
+            KfTokKind::KwImpl => self.parse_impl(tree),
             _ => {
                 // error: unexpected symbol
                 Err(vec![comp_msg::error_inv_statement_glob()])
@@ -100,12 +106,12 @@ impl<'a> KfParser<'a> {
         }
     }
 
-    fn parse_fun(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_fun(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwFn)?;
         let name = self.consume_name_literal()?;
         let mut variadic = false;
         self.consume_tok(KfTokKind::SymParenthOpen)?;
-        let args = self.parse_arg_list()?;
+        let args = self.parse_arg_list(tree)?;
         if self.match_current_tok(KfTokKind::SymEllipsis) {
             variadic = true;
         }
@@ -113,29 +119,29 @@ impl<'a> KfParser<'a> {
         // return value specified?
         let ret = if self.check_current_tok(KfTokKind::SymArrow) {
             self.consume_tok(KfTokKind::SymArrow)?;
-            self.parse_type()?
+            self.parse_type(tree)?
         } else {
             ast::TypeDecl::new(String::new())
         };
-        let body = self.parse_scope()?;
-        Ok(ast::Node::new(
+        let body = self.parse_scope(tree)?;
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::FnDef(ast::Fun {
                 name,
                 args,
                 variadic,
                 ret,
-                body: Box::new(body),
+                body,
             }),
             at,
-        ))
+        )))
     }
 
-    fn parse_arg_list(&mut self) -> ParsingResult<Vec<ast::VarDecl>> {
+    fn parse_arg_list(&mut self, tree: &mut ast::Tree) -> ParsingResult<Vec<ast::VarDecl>> {
         let mut ret = Vec::new();
         if !self.check_current_tok(KfTokKind::SymParenthClose) {
             let name = self.consume_name_literal()?;
             self.consume_tok(KfTokKind::SymColon)?;
-            let type_dec = self.parse_type()?;
+            let type_dec = self.parse_type(tree)?;
             ret.push(ast::VarDecl { name, type_dec });
         }
         while !self.check_current_tok(KfTokKind::SymParenthClose) {
@@ -150,7 +156,7 @@ impl<'a> KfParser<'a> {
             if self.match_current_tok(KfTokKind::SymComma) {
                 let name = self.consume_name_literal()?;
                 self.consume_tok(KfTokKind::SymColon)?;
-                let type_dec = self.parse_type()?;
+                let type_dec = self.parse_type(tree)?;
                 ret.push(ast::VarDecl { name, type_dec });
             } else {
                 return Err(vec![comp_msg::error_arg_list_expected_coma_or_parenth(
@@ -161,7 +167,7 @@ impl<'a> KfParser<'a> {
         Ok(ret)
     }
 
-    fn parse_type(&mut self) -> ParsingResult<ast::TypeDecl> {
+    fn parse_type(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::TypeDecl> {
         // optimization - instead of calling recursively parse_type
         // for each '&', just loop over all '&' '& mut' and
         // get them out
@@ -194,15 +200,15 @@ impl<'a> KfParser<'a> {
             // parse either array or slice
             // TODO: below call might fail, handle this error here and add
             // a context like: parsing array error: {}
-            let array_type = self.parse_type()?;
+            let array_type = self.parse_type(tree)?;
             let type_result = if self.match_current_tok(KfTokKind::SymSemi) {
                 // this is an array definition
-                let expr = self.parse_expression()?;
+                let expr = self.parse_expression(tree)?;
                 Ok(ast::TypeDecl {
                     reference_stack,
                     scope_res_relative,
                     scope_resolution,
-                    type_id: ast::TypeKind::Array(Box::new(array_type), Some(Box::new(expr))),
+                    type_id: ast::TypeKind::Array(Box::new(array_type), Some(expr)),
                 })
             } else {
                 Ok(ast::TypeDecl {
@@ -226,7 +232,7 @@ impl<'a> KfParser<'a> {
                 self.consume_tok(KfTokKind::SymScopeResolution)?;
             }
             // bar<T, Z, K>?
-            let (literal, generic_types) = self.parse_typename_with_generics()?;
+            let (literal, generic_types) = self.parse_typename_with_generics(tree)?;
             if generic_types.len() > 0 {
                 Ok(ast::TypeDecl {
                     reference_stack,
@@ -245,72 +251,72 @@ impl<'a> KfParser<'a> {
         }
     }
 
-    fn parse_typename_with_generics(&mut self) -> ParsingResult<(String, Vec<ast::TypeDecl>)> {
+    fn parse_typename_with_generics(&mut self, tree: &mut ast::Tree) -> ParsingResult<(String, Vec<ast::TypeDecl>)> {
         let name = self.consume_name_literal()?;
         let mut generic_types = Vec::new();
         if self.match_current_tok(KfTokKind::OpLt) {
             // parse_type_list inlined here
             while !self.match_current_tok(KfTokKind::OpGt) {
-                generic_types.push(self.parse_type()?);
+                generic_types.push(self.parse_type(tree)?);
                 self.match_current_tok(KfTokKind::SymComma);
             }
         }
         Ok((name, generic_types))
     }
 
-    fn parse_struct(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_struct(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         self.consume_tok(KfTokKind::KwStruct)?;
         let at = self.get_curr()?.at;
-        let (name, generic_args) = self.parse_typename_with_generics()?;
+        let (name, generic_args) = self.parse_typename_with_generics(tree)?;
         self.consume_tok(KfTokKind::SymCurlyOpen)?;
-        let members = self.parse_struct_fields()?;
+        let members = self.parse_struct_fields(tree)?;
         self.consume_tok(KfTokKind::SymCurlyClose)?;
-        Ok(ast::Node::new(
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::Struct(ast::Struct {
                 name,
                 generic_args,
                 members,
             }),
             at,
-        ))
+        )))
     }
 
-    fn parse_struct_fields(&mut self) -> ParsingResult<Vec<ast::VarDecl>> {
+    fn parse_struct_fields(&mut self, tree: &mut ast::Tree) -> ParsingResult<Vec<ast::VarDecl>> {
         let mut ret = Vec::new();
         while self.get_curr()?.kind != KfTokKind::SymCurlyClose {
             let name = self.consume_name_literal()?;
             self.consume_tok(KfTokKind::SymColon)?;
-            let type_dec = self.parse_type()?;
+            let type_dec = self.parse_type(tree)?;
             self.match_current_tok(KfTokKind::SymComma);
             ret.push(ast::VarDecl { name, type_dec })
         }
         Ok(ret)
     }
 
-    fn parse_enum(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_enum(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         self.consume_tok(KfTokKind::KwEnum)?;
         let at = self.get_curr()?.at;
-        let (name, generic_args) = self.parse_typename_with_generics()?;
+        let (name, generic_args) = self.parse_typename_with_generics(tree)?;
         self.consume_tok(KfTokKind::SymCurlyOpen)?;
-        let enums = self.parse_enum_fields()?;
+        let enums = self.parse_enum_fields(tree)?;
         self.consume_tok(KfTokKind::SymCurlyClose)?;
-        Ok(ast::Node::new(
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::Enum(ast::Enum {
                 name,
                 generic_args,
                 enums,
             }),
             at,
-        ))
+        )))
     }
 
-    fn parse_enum_fields(&mut self) -> ParsingResult<Vec<(String, Option<ast::TypeDecl>)>> {
+    fn parse_enum_fields(&mut self, tree: &mut ast::Tree) -> ParsingResult<Vec<(String, Option<ast::TypeDecl>)>> {
         let mut ret = Vec::new();
         while self.get_curr()?.kind != KfTokKind::SymCurlyClose {
             let name = self.consume_name_literal()?;
             // self.consume_tok(KfTokKind::SymColon)?;
             if self.match_current_tok(KfTokKind::SymParenthOpen) {
-                let type_dec = self.parse_type()?;
+                let type_dec = self.parse_type(tree)?;
                 ret.push((name, Some(type_dec)));
                 self.consume_tok(KfTokKind::SymParenthClose)?;
             } else {
@@ -321,72 +327,72 @@ impl<'a> KfParser<'a> {
         Ok(ret)
     }
 
-    fn parse_impl(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_impl(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         self.consume_tok(KfTokKind::KwImpl)?;
         let at = self.get_curr()?.at;
         let name = self.consume_name_literal()?;
         self.consume_tok(KfTokKind::SymCurlyOpen)?;
         let mut scope = Vec::new();
         while self.get_curr()?.kind != KfTokKind::SymCurlyClose {
-            scope.push(self.parse_fun()?);
+            scope.push(self.parse_fun(tree)?);
         }
         self.consume_tok(KfTokKind::SymCurlyClose)?;
-        Ok(ast::Node::new(
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::Impl(ast::Impl { name, scope }),
             at,
-        ))
+        )))
     }
 
-    fn parse_scope(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_scope(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::SymCurlyOpen)?;
         let mut scope = Vec::new();
         while !self.check_current_tok(KfTokKind::SymCurlyClose) {
             if let Some(t) = self.iter.lookahead(1) {
                 if t.kind == KfTokKind::OpAssign {
-                    scope.push(self.parse_assign()?);
+                    scope.push(self.parse_assign(tree)?);
                     continue;
                 }
             }
             match self.get_curr()?.kind {
                 KfTokKind::KwIf | KfTokKind::KwFor | KfTokKind::KwWhile | KfTokKind::KwLoop => {
-                    scope.push(self.parse_ctrl_flow()?)
+                    scope.push(self.parse_ctrl_flow(tree)?)
                 }
-                KfTokKind::KwLet => scope.push(self.parse_var()?),
+                KfTokKind::KwLet => scope.push(self.parse_var(tree)?),
                 KfTokKind::KwBreak => {
                     let at = self.consume_tok(KfTokKind::KwBreak)?;
                     self.consume_tok(KfTokKind::SymSemi)?;
-                    scope.push(ast::Node::new(ast::Ntype::Break, at));
+                    scope.push(tree.push(ast::Node::new(ast::Ntype::Break, at)));
                 }
                 KfTokKind::KwContinue => {
                     let at = self.consume_tok(KfTokKind::KwContinue)?;
                     self.consume_tok(KfTokKind::SymSemi)?;
-                    scope.push(ast::Node::new(ast::Ntype::Continue, at));
+                    scope.push(tree.push(ast::Node::new(ast::Ntype::Continue, at)));
                 }
                 _ => {
-                    scope.push(self.parse_expression()?);
+                    scope.push(self.parse_expression(tree)?);
                     self.consume_tok(KfTokKind::SymSemi)?;
                 }
             }
         }
         self.consume_tok(KfTokKind::SymCurlyClose)?;
-        Ok(ast::Node::new(ast::Ntype::Scope(scope), at))
+        Ok(tree.push(ast::Node::new(ast::Ntype::Scope(scope), at)))
     }
 
-    fn parse_expression(&mut self) -> ParsingResult<ast::Node> {
-        Ok(self.parse_equality()?)
+    fn parse_expression(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
+        Ok(self.parse_equality(tree)?)
     }
 
-    fn parse_equality(&mut self) -> ParsingResult<ast::Node> {
-        let mut expr = self.parse_comparison()?;
+    fn parse_equality(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
+        let mut expr = self.parse_comparison(tree)?;
         loop {
             let at = self.get_curr()?.at;
             if self.match_current_tok(KfTokKind::OpEq) {
-                let right = self.parse_comparison()?;
-                expr = ast::Node::new(ast::Ntype::Eq(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_comparison(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Eq(expr, right), at));
                 continue;
             } else if self.match_current_tok(KfTokKind::OpNe) {
-                let right = self.parse_comparison()?;
-                expr = ast::Node::new(ast::Ntype::Neq(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_comparison(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Neq(expr, right), at));
                 continue;
             }
             break;
@@ -394,22 +400,22 @@ impl<'a> KfParser<'a> {
         Ok(expr)
     }
 
-    fn parse_comparison(&mut self) -> ParsingResult<ast::Node> {
-        let mut expr = self.parse_term()?;
+    fn parse_comparison(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
+        let mut expr = self.parse_term(tree)?;
         loop {
             let at = self.get_curr()?.at;
             if self.match_current_tok(KfTokKind::OpGt) {
-                let right = self.parse_term()?;
-                expr = ast::Node::new(ast::Ntype::Gt(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_term(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Gt(expr, right), at));
             } else if self.match_current_tok(KfTokKind::OpGe) {
-                let right = self.parse_term()?;
-                expr = ast::Node::new(ast::Ntype::Ge(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_term(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Ge(expr, right), at));
             } else if self.match_current_tok(KfTokKind::OpLt) {
-                let right = self.parse_term()?;
-                expr = ast::Node::new(ast::Ntype::Lt(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_term(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Lt(expr, right), at));
             } else if self.match_current_tok(KfTokKind::OpLe) {
-                let right = self.parse_term()?;
-                expr = ast::Node::new(ast::Ntype::Le(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_term(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Le(expr, right), at));
             } else {
                 break;
             }
@@ -417,16 +423,16 @@ impl<'a> KfParser<'a> {
         Ok(expr)
     }
 
-    fn parse_term(&mut self) -> ParsingResult<ast::Node> {
-        let mut expr = self.parse_factor()?;
+    fn parse_term(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
+        let mut expr = self.parse_factor(tree)?;
         loop {
             let at = self.get_curr()?.at;
             if self.match_current_tok(KfTokKind::OpPlus) {
-                let right = self.parse_factor()?;
-                expr = ast::Node::new(ast::Ntype::Plus(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_factor(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Plus(expr, right), at));
             } else if self.match_current_tok(KfTokKind::OpMinus) {
-                let right = self.parse_factor()?;
-                expr = ast::Node::new(ast::Ntype::Minus(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_factor(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Minus(expr, right), at));
             } else {
                 break;
             }
@@ -434,16 +440,16 @@ impl<'a> KfParser<'a> {
         Ok(expr)
     }
 
-    fn parse_factor(&mut self) -> ParsingResult<ast::Node> {
-        let mut expr = self.parse_unary()?;
+    fn parse_factor(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
+        let mut expr = self.parse_unary(tree)?;
         loop {
             let at = self.get_curr()?.at;
             if self.match_current_tok(KfTokKind::OpSlash) {
-                let right = self.parse_unary()?;
-                expr = ast::Node::new(ast::Ntype::Slash(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_unary(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Slash(expr, right), at));
             } else if self.match_current_tok(KfTokKind::OpStar) {
-                let right = self.parse_unary()?;
-                expr = ast::Node::new(ast::Ntype::Star(Box::new(expr), Box::new(right)), at);
+                let right = self.parse_unary(tree)?;
+                expr = tree.push(ast::Node::new(ast::Ntype::Star(expr, right), at));
             } else {
                 break;
             }
@@ -451,58 +457,58 @@ impl<'a> KfParser<'a> {
         Ok(expr)
     }
 
-    fn parse_unary(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_unary(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.get_curr()?.at;
         if self.match_current_tok(KfTokKind::OpBang) {
-            let expr = self.parse_unary()?;
-            return Ok(ast::Node::new(ast::Ntype::Bang(Box::new(expr)), at));
+            let expr = self.parse_unary(tree)?;
+            return Ok(tree.push(ast::Node::new(ast::Ntype::Bang(expr), at)));
         } else if self.match_current_tok(KfTokKind::OpMinus) {
-            let expr = self.parse_unary()?;
-            return Ok(ast::Node::new(ast::Ntype::UMinus(Box::new(expr)), at));
+            let expr = self.parse_unary(tree)?;
+            return Ok(tree.push(ast::Node::new(ast::Ntype::UMinus(expr), at)));
         }
-        self.parse_primary()
+        self.parse_primary(tree)
     }
 
-    fn parse_primary(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_primary(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let t = self.get_curr()?;
         if self.match_current_tok(KfTokKind::SlTrue) {
-            return Ok(ast::Node::new(ast::Ntype::True, t.at));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::True, t.at)));
         } else if self.match_current_tok(KfTokKind::SlFalse) {
-            return Ok(ast::Node::new(ast::Ntype::False, t.at));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::False, t.at)));
         } else if self.check_tok_sequence(&[KfTokKind::Literal, KfTokKind::SymParenthOpen]) {
             // this is a function call
-            return self.parse_fn_call();
+            return self.parse_fn_call(tree);
         } else if self.match_current_tok(KfTokKind::LitChar) {
-            return Ok(ast::Node::new(ast::Ntype::Char(t.text.clone()), t.at));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::Char(t.text.clone()), t.at)));
         } else if self.match_current_tok(KfTokKind::LitString) {
-            return Ok(ast::Node::new(ast::Ntype::String(t.text.clone()), t.at));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::String(t.text.clone()), t.at)));
         } else if self.match_current_tok(KfTokKind::Literal) {
-            return Ok(ast::Node::new(ast::Ntype::Literal(t.text.clone()), t.at));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::Literal(t.text.clone()), t.at)));
         } else if self.match_current_tok(KfTokKind::SymParenthOpen) {
-            let expr = self.parse_expression()?;
+            let expr = self.parse_expression(tree)?;
             self.consume_tok(KfTokKind::SymParenthClose)?;
             return Ok(expr);
         }
         Err(vec![comp_msg::error_invalid_primary_expression(t.at)])
     }
 
-    fn parse_fn_call(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_fn_call(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let fn_name = self.consume_name_literal()?;
         let at = self.consume_tok(KfTokKind::SymParenthOpen)?;
-        let args = self.parse_expr_list()?;
+        let args = self.parse_expr_list(tree)?;
         self.consume_tok(KfTokKind::SymParenthClose)?;
-        return Ok(ast::Node::new(ast::Ntype::FnCall(fn_name, args), at));
+        return Ok(tree.push(ast::Node::new(ast::Ntype::FnCall(fn_name, args), at)));
     }
 
-    fn parse_expr_list(&mut self) -> ParsingResult<Vec<ast::Node>> {
+    fn parse_expr_list(&mut self, tree: &mut ast::Tree ) -> ParsingResult<Vec<ast::NodeRef>> {
         let mut ret = Vec::new();
         // expression list can be empty
         if !self.check_current_tok(KfTokKind::SymParenthClose) {
-            ret.push(self.parse_expression()?);
+            ret.push(self.parse_expression(tree)?);
         }
         while !self.check_current_tok(KfTokKind::SymParenthClose) {
             if self.match_current_tok(KfTokKind::SymComma) {
-                ret.push(self.parse_expression()?);
+                ret.push(self.parse_expression(tree)?);
             } else {
                 return Err(vec![comp_msg::error_expr_list_expected_coma_or_parenth(
                     self.get_curr()?.at,
@@ -512,36 +518,36 @@ impl<'a> KfParser<'a> {
         Ok(ret)
     }
 
-    fn parse_ctrl_flow(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_ctrl_flow(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         match self.get_curr()?.kind {
-            KfTokKind::KwIf => self.parse_if(),
-            KfTokKind::KwFor => self.parse_for(),
-            KfTokKind::KwWhile => self.parse_while(),
-            KfTokKind::KwLoop => self.parse_loop(),
+            KfTokKind::KwIf => self.parse_if(tree),
+            KfTokKind::KwFor => self.parse_for(tree),
+            KfTokKind::KwWhile => self.parse_while(tree),
+            KfTokKind::KwLoop => self.parse_loop(tree),
             _ => Err(vec![comp_msg::error_expected_ctrl_flow(
                 self.get_curr()?.at,
             )]),
         }
     }
 
-    fn parse_if(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_if(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwIf)?;
-        let cond = Box::new(self.parse_expression()?);
-        let body = Box::new(self.parse_scope()?);
+        let cond = self.parse_expression(tree)?;
+        let body = self.parse_scope(tree)?;
         let mut elif = Vec::new();
         while self.check_tok_sequence(&[KfTokKind::KwElse, KfTokKind::KwIf]) {
             self.consume_tok(KfTokKind::KwElse)?;
             self.consume_tok(KfTokKind::KwIf)?;
-            let cond = Box::new(self.parse_expression()?);
-            let body = Box::new(self.parse_scope()?);
+            let cond = self.parse_expression(tree)?;
+            let body = self.parse_scope(tree)?;
             elif.push(ast::Elif { cond, body });
         }
         let else_body = if self.match_current_tok(KfTokKind::KwElse) {
-            Some(Box::new(self.parse_scope()?))
+            Some(self.parse_scope(tree)?)
         } else {
             None
         };
-        Ok(ast::Node::new(
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::If(ast::If {
                 cond,
                 body,
@@ -549,65 +555,65 @@ impl<'a> KfParser<'a> {
                 else_body,
             }),
             at,
-        ))
+        )))
     }
 
-    fn parse_for(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_for(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwFor)?;
         let var_pattern = self.consume_name_literal()?;
         self.consume_tok(KfTokKind::KwIn)?;
-        let in_expr = Box::new(self.parse_expression()?);
-        let body = Box::new(self.parse_scope()?);
-        Ok(ast::Node::new(
+        let in_expr = self.parse_expression(tree)?;
+        let body = self.parse_scope(tree)?;
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::For(ast::For {
                 var_pattern,
                 in_expr,
                 body,
             }),
             at,
-        ))
+        )))
     }
 
-    fn parse_while(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_while(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwWhile)?;
-        let cond = Box::new(self.parse_expression()?);
-        let body = Box::new(self.parse_scope()?);
-        Ok(ast::Node::new(
+        let cond = self.parse_expression(tree)?;
+        let body = self.parse_scope(tree)?;
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::While(ast::While { cond, body }),
             at,
-        ))
+        )))
     }
 
-    fn parse_loop(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_loop(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwLoop)?;
-        let body = Box::new(self.parse_scope()?);
-        Ok(ast::Node::new(ast::Ntype::Loop(ast::Loop { body }), at))
+        let body = self.parse_scope(tree)?;
+        Ok(tree.push(ast::Node::new(ast::Ntype::Loop(ast::Loop { body }), at)))
     }
 
-    fn parse_var(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_var(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         if self.check_tok_sequence(&[KfTokKind::KwLet, KfTokKind::KwMut]) {
-            self.parse_mut_var()
+            self.parse_mut_var(tree)
         } else {
-            self.parse_const_var()
+            self.parse_const_var(tree)
         }
     }
 
-    fn parse_const_var(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_const_var(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwLet)?;
         let name = self.consume_name_literal()?;
         let vartype = if self.match_current_tok(KfTokKind::SymColon) {
             // Some(ast::TypeDecl::new(self.consume_name_literal()?))
-            Some(self.parse_type()?)
+            Some(self.parse_type(tree)?)
         } else {
             None
         };
         let expr = if self.match_current_tok(KfTokKind::OpAssign) {
-            Some(Box::new(self.parse_expression()?))
+            Some(self.parse_expression(tree)?)
         } else {
             None
         };
         self.consume_tok(KfTokKind::SymSemi)?;
-        Ok(ast::Node::new(
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::VarDef(ast::VarDef {
                 mutable: false,
                 name,
@@ -615,10 +621,10 @@ impl<'a> KfParser<'a> {
                 expr,
             }),
             at,
-        ))
+        )))
     }
 
-    fn parse_mut_var(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_mut_var(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwLet)?;
         self.consume_tok(KfTokKind::KwMut)?;
         let name = self.consume_name_literal()?;
@@ -628,12 +634,12 @@ impl<'a> KfParser<'a> {
             None
         };
         let expr = if self.match_current_tok(KfTokKind::OpAssign) {
-            Some(Box::new(self.parse_expression()?))
+            Some(self.parse_expression(tree)?)
         } else {
             None
         };
         self.consume_tok(KfTokKind::SymSemi)?;
-        Ok(ast::Node::new(
+        Ok(tree.push(ast::Node::new(
             ast::Ntype::VarDef(ast::VarDef {
                 mutable: true,
                 name,
@@ -641,15 +647,15 @@ impl<'a> KfParser<'a> {
                 expr,
             }),
             at,
-        ))
+        )))
     }
 
-    fn parse_assign(&mut self) -> ParsingResult<ast::Node> {
+    fn parse_assign(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let name = self.consume_name_literal()?;
         let at = self.consume_tok(KfTokKind::OpAssign)?;
-        let expr = self.parse_expression()?;
+        let expr = self.parse_expression(tree)?;
         self.consume_tok(KfTokKind::SymSemi)?;
-        Ok(ast::Node::new(ast::Ntype::Assign(name, Box::new(expr)), at))
+        Ok(tree.push(ast::Node::new(ast::Ntype::Assign(name, expr), at)))
     }
     /// Returns current token or emits eof error
     fn get_curr(&self) -> ParsingResult<&'a KfToken> {

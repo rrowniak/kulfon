@@ -4,7 +4,7 @@
 // License: Read LICENSE file
 // Created on: 04.07.2024
 // ---------------------------------------------------
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub enum EvaluatedType {
     // built-in types
     Void,
@@ -28,6 +28,7 @@ pub enum EvaluatedType {
     Rune,
     String,
     // to be deduced by compiler
+    #[default]
     ToBeInferred,
     // partially inferred from literal
     FloatingNum,
@@ -124,7 +125,7 @@ impl EvaluatedType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct KfType {
     pub mutable: Option<bool>,
     pub eval_type: EvaluatedType,

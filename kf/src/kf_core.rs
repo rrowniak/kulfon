@@ -10,6 +10,21 @@ use crate::comp_msg::{CompileMsgCol, TextPoint};
 use crate::type_system::*;
 use std::collections::HashMap;
 
+#[derive(Copy, Clone, Debug)]
+pub struct SideNodeRef(u32);
+
+impl SideNodeRef {
+    pub fn from_node_ref(nref: ast::NodeRef) -> Self {
+        Self(nref.as_usize() as u32)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SideNode {
+    pub eval_type: KfType,
+    pub eval_val: Option<EvaluatedValue>,
+}
+
 pub struct ScopeLog {
     /// <variable name, type definition>
     var_decl: HashMap<String, VarDefinition>,
@@ -23,7 +38,7 @@ pub struct ScopeLog {
 pub struct VarDefinition {
     v_type: KfType,
     def_at: TextPoint,
-    side_node_indx: usize,
+    side_node_ref: SideNodeRef,
 }
 
 pub struct FunDeclaration {
@@ -40,6 +55,9 @@ pub struct Context {
 }
 
 impl Context {
+    pub fn get_side_node(&self, i: SideNodeRef) -> &SideNode {
+        &self.side_nodes[i.0 as usize]
+    }
     fn scope_push(&mut self, transient: bool) {
         self.temp_scope.push(ScopeLog {
             var_decl: HashMap::new(),
@@ -119,44 +137,50 @@ impl Context {
         let (t, indx) = if let Some(v) = self.scope_get_var_mut(name) {
             (
                 std::mem::replace(&mut v.v_type.eval_type, t),
-                v.side_node_indx,
+                v.side_node_ref,
             )
         } else {
             return None;
         };
-        self.side_nodes[indx].eval_type.eval_type = t.clone();
+        self.side_nodes[indx.0 as usize].eval_type.eval_type = t.clone();
         Some(t)
     }
 }
 
 pub struct InterRepr {
-    pub syntree: ast::Node,
+    pub syntree: ast::Tree,
     pub ctx: Context,
 }
 
 impl InterRepr {
-    pub fn from(mut syntree: ast::Node, mut builtin: ast::Node) -> Result<Self, CompileMsgCol> {
+    pub fn from(syntree: ast::Tree, builtin: ast::Tree) -> Result<Self, CompileMsgCol> {
         let mut ctx = Context {
-            side_nodes: Vec::new(),
+            side_nodes: Vec::with_capacity(syntree.flat.len()),
             glob_functs: HashMap::new(),
             // add a global scope
             temp_scope: Vec::new(),
         };
+        ctx.side_nodes
+            .resize(syntree.flat.len(), SideNode::default());
         // collect all function definitions
-        collect_glob_functions(&mut builtin, &mut ctx)?;
-        collect_glob_functions(&mut syntree, &mut ctx)?;
+        collect_glob_functions(&builtin, builtin.root, &mut ctx)?;
+        collect_glob_functions(&syntree, syntree.root, &mut ctx)?;
         // evaluate expression types
-        eval_types(&mut syntree, &mut ctx)?;
+        eval_types(&syntree, syntree.root, &mut ctx)?;
         Ok(Self { syntree, ctx })
     }
 }
 
-fn collect_glob_functions(syntree: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol> {
+fn collect_glob_functions(
+    syntree: &ast::Tree,
+    nref: ast::NodeRef,
+    ctx: &mut Context,
+) -> Result<(), CompileMsgCol> {
     let mut errors = Vec::new();
-    match &mut syntree.val {
+    match &syntree.get(nref).val {
         ast::Ntype::Scope(scope) => {
-            for st in scope.iter_mut() {
-                collect_glob_functions(st, ctx)?;
+            for st in scope.iter() {
+                collect_glob_functions(syntree, *st, ctx)?;
             }
         }
         ast::Ntype::FnDef(fndef) => {
@@ -171,7 +195,7 @@ fn collect_glob_functions(syntree: &mut ast::Node, ctx: &mut Context) -> Result<
             if let Some(c) = name.chars().next() {
                 // TODO: Add '_' to the exception list
                 if !c.is_ascii_alphabetic() {
-                    errors.push(comp_msg::error_inv_var_fn_name(syntree.at));
+                    errors.push(comp_msg::error_inv_var_fn_name(syntree.get(nref).at));
                 }
             }
             if !ctx
@@ -187,7 +211,7 @@ fn collect_glob_functions(syntree: &mut ast::Node, ctx: &mut Context) -> Result<
                 .is_none()
             {
                 // collision - this function already defined
-                errors.push(comp_msg::error_fn_name_in_use(syntree.at));
+                errors.push(comp_msg::error_fn_name_in_use(syntree.get(nref).at));
             }
         }
         _ => {}
@@ -199,7 +223,12 @@ fn collect_glob_functions(syntree: &mut ast::Node, ctx: &mut Context) -> Result<
     }
 }
 
-fn eval_types(n: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol> {
+fn eval_types(
+    tree: &ast::Tree,
+    nref: ast::NodeRef,
+    ctx: &mut Context,
+) -> Result<(), CompileMsgCol> {
+    let n = tree.get(nref);
     match n.val {
         // operators
         // binary operators:
@@ -207,151 +236,95 @@ fn eval_types(n: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol>
         // * evaluate expression type based on a and b
         // * For logic operators resulting type is bool
         // * Try to calculate the value if possible
-        ast::Ntype::Eq(ref mut a, ref mut b) => {
-            calc_type_for_bin_nontransient_op(a.as_mut(), b.as_mut(), &mut n.meta_idx, n.at, ctx)?;
+        ast::Ntype::Eq(a, b) => {
+            calc_type_for_bin_nontransient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Neq(ref mut a, ref mut b) => {
-            calc_type_for_bin_nontransient_op(a.as_mut(), b.as_mut(), &mut n.meta_idx, n.at, ctx)?;
+        ast::Ntype::Neq(a, b) => {
+            calc_type_for_bin_nontransient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Gt(ref mut a, ref mut b) => {
-            calc_type_for_bin_arithmetic_nontransient_op(
-                a.as_mut(),
-                b.as_mut(),
-                &mut n.meta_idx,
-                n.at,
-                ctx,
-            )?;
+        ast::Ntype::Gt(a, b) => {
+            calc_type_for_bin_arithmetic_nontransient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Ge(ref mut a, ref mut b) => {
-            calc_type_for_bin_arithmetic_nontransient_op(
-                a.as_mut(),
-                b.as_mut(),
-                &mut n.meta_idx,
-                n.at,
-                ctx,
-            )?;
+        ast::Ntype::Ge(a, b) => {
+            calc_type_for_bin_arithmetic_nontransient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Lt(ref mut a, ref mut b) => {
-            calc_type_for_bin_arithmetic_nontransient_op(
-                a.as_mut(),
-                b.as_mut(),
-                &mut n.meta_idx,
-                n.at,
-                ctx,
-            )?;
+        ast::Ntype::Lt(a, b) => {
+            calc_type_for_bin_arithmetic_nontransient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Le(ref mut a, ref mut b) => {
-            calc_type_for_bin_arithmetic_nontransient_op(
-                a.as_mut(),
-                b.as_mut(),
-                &mut n.meta_idx,
-                n.at,
-                ctx,
-            )?;
+        ast::Ntype::Le(a, b) => {
+            calc_type_for_bin_arithmetic_nontransient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Plus(ref mut a, ref mut b) => {
-            calc_type_for_bin_arithmetic_transient_op(
-                a.as_mut(),
-                b.as_mut(),
-                &mut n.meta_idx,
-                n.at,
-                ctx,
-            )?;
+        ast::Ntype::Plus(a, b) => {
+            calc_type_for_bin_arithmetic_transient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Minus(ref mut a, ref mut b) => {
-            calc_type_for_bin_arithmetic_transient_op(
-                a.as_mut(),
-                b.as_mut(),
-                &mut n.meta_idx,
-                n.at,
-                ctx,
-            )?;
+        ast::Ntype::Minus(a, b) => {
+            calc_type_for_bin_arithmetic_transient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Slash(ref mut a, ref mut b) => {
-            calc_type_for_bin_arithmetic_transient_op(
-                a.as_mut(),
-                b.as_mut(),
-                &mut n.meta_idx,
-                n.at,
-                ctx,
-            )?;
+        ast::Ntype::Slash(a, b) => {
+            calc_type_for_bin_arithmetic_transient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Star(ref mut a, ref mut b) => {
-            calc_type_for_bin_arithmetic_transient_op(
-                a.as_mut(),
-                b.as_mut(),
-                &mut n.meta_idx,
-                n.at,
-                ctx,
-            )?;
+        ast::Ntype::Star(a, b) => {
+            calc_type_for_bin_arithmetic_transient_op(tree, nref, a, b, ctx)?;
         }
-        ast::Ntype::Bang(ref mut a) => {
-            calc_type_for_unary_logic_op(a.as_mut(), &mut n.meta_idx, n.at, ctx)?;
+        ast::Ntype::Bang(a) => {
+            calc_type_for_unary_logic_op(tree, nref, a, ctx)?;
         }
-        ast::Ntype::UMinus(ref mut a) => {
+        ast::Ntype::UMinus(a) => {
             // unary minus
-            calc_type_for_unary_arithm_op(a.as_mut(), &mut n.meta_idx, n.at, ctx)?;
+            calc_type_for_unary_arithm_op(tree, nref, a, ctx)?;
         }
         // assign
-        ast::Ntype::Assign(ref mut a, ref mut b) => {
-            calc_type_for_assign_op(&a, b.as_mut(), &mut n.meta_idx, n.at, ctx)?;
+        ast::Ntype::Assign(ref a, b) => {
+            calc_type_for_assign_op(tree, nref, a, b, ctx)?;
         }
         // control flow
-        ast::Ntype::If(ref mut if_) => {
+        ast::Ntype::If(ref if_) => {
             // condition must be bool
-            calc_type_for_bool_cond(if_.cond.as_mut(), &mut n.meta_idx, n.at, ctx)?;
+            calc_type_for_bool_cond(tree, nref, if_.cond, ctx)?;
             // evaluate body
-            eval_types(if_.body.as_mut(), ctx)?;
+            eval_types(tree, if_.body, ctx)?;
             // evaluate elif
-            for elif in if_.elif.iter_mut() {
-                calc_type_for_bool_cond(elif.cond.as_mut(), &mut n.meta_idx, n.at, ctx)?;
+            for elif in if_.elif.iter() {
+                calc_type_for_bool_cond(tree, nref, elif.cond, ctx)?;
                 // body
-                eval_types(elif.body.as_mut(), ctx)?;
+                eval_types(tree, elif.body, ctx)?;
             }
             // evaluate else
-            if let Some(else_body) = &mut if_.else_body {
-                eval_types(else_body.as_mut(), ctx)?;
+            if let Some(else_body) = &if_.else_body {
+                eval_types(tree, *else_body, ctx)?;
             }
-            set_type_void(&mut n.meta_idx, ctx);
+            set_type_void(nref, ctx);
         }
-        ast::Ntype::For(ref mut for_) => {
+        ast::Ntype::For(ref for_) => {
             // TODO: handle matching patterns
-            eval_types(for_.in_expr.as_mut(), ctx)?;
-            eval_types(for_.body.as_mut(), ctx)?;
-            set_type_void(&mut n.meta_idx, ctx);
+            eval_types(tree, for_.in_expr, ctx)?;
+            eval_types(tree, for_.body, ctx)?;
+            set_type_void(nref, ctx);
         }
-        ast::Ntype::While(ref mut while_) => {
-            calc_type_for_bool_cond(while_.cond.as_mut(), &mut n.meta_idx, n.at, ctx)?;
+        ast::Ntype::While(ref while_) => {
+            calc_type_for_bool_cond(tree, nref, while_.cond, ctx)?;
             // evaluate body
-            eval_types(while_.body.as_mut(), ctx)?;
-            set_type_void(&mut n.meta_idx, ctx);
+            eval_types(tree, while_.body, ctx)?;
+            set_type_void(nref, ctx);
         }
-        ast::Ntype::Loop(ref mut loop_) => {
-            eval_types(loop_.body.as_mut(), ctx)?;
-            set_type_void(&mut n.meta_idx, ctx);
+        ast::Ntype::Loop(ref loop_) => {
+            eval_types(tree, loop_.body, ctx)?;
+            set_type_void(nref, ctx);
         }
-        ast::Ntype::Break => set_type(
-            &mut n.meta_idx,
-            ctx,
-            KfType::from_literal(EvaluatedType::Never),
-            None,
-        ),
-        ast::Ntype::Continue => set_type(
-            &mut n.meta_idx,
-            ctx,
-            KfType::from_literal(EvaluatedType::Never),
-            None,
-        ),
+        ast::Ntype::Break => set_type(nref, ctx, KfType::from_literal(EvaluatedType::Never), None),
+        ast::Ntype::Continue => {
+            set_type(nref, ctx, KfType::from_literal(EvaluatedType::Never), None)
+        }
         // higher level structures
         ast::Ntype::Struct(_) => unimplemented!(),
         ast::Ntype::Enum(_) => unimplemented!(),
         ast::Ntype::Impl(_) => unimplemented!(),
-        ast::Ntype::Scope(ref mut a) => {
+        ast::Ntype::Scope(ref a) => {
             ctx.scope_push(true);
-            for n in a.iter_mut() {
-                eval_types(n, ctx)?;
+            for node in a.iter() {
+                eval_types(tree, *node, ctx)?;
             }
-            set_type_void(&mut n.meta_idx, ctx);
+            set_type_void(nref, ctx);
             let not_deduced_err = ctx
                 .scope_pop()
                 .iter()
@@ -361,10 +334,10 @@ fn eval_types(n: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol>
                 return Err(not_deduced_err);
             }
         }
-        ast::Ntype::FnDef(ref mut fndef) => {
+        ast::Ntype::FnDef(ref fndef) => {
             ctx.scope_push(false);
-            eval_types(fndef.body.as_mut(), ctx)?;
-            set_type_void(&mut n.meta_idx, ctx);
+            eval_types(tree, fndef.body, ctx)?;
+            set_type_void(nref, ctx);
             let not_deduced_err = ctx
                 .scope_pop()
                 .iter()
@@ -374,29 +347,29 @@ fn eval_types(n: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol>
                 return Err(not_deduced_err);
             }
         }
-        ast::Ntype::FnCall(ref mut name, ref mut args) => {
-            calc_type_for_fn_call(&name, args, &mut n.meta_idx, n.at, ctx)?;
+        ast::Ntype::FnCall(ref name, ref args) => {
+            calc_type_for_fn_call(tree, nref, &name, args, ctx)?;
         }
-        ast::Ntype::VarDef(ref mut vardef) => {
-            calc_type_for_var_def(vardef, &mut n.meta_idx, n.at, ctx)?;
+        ast::Ntype::VarDef(ref vardef) => {
+            calc_type_for_var_def(tree, nref, vardef, ctx)?;
         }
         // terminals
-        ast::Ntype::String(ref mut ss) => {
+        ast::Ntype::String(ref ss) => {
             let ss = ss.clone();
             set_type(
-                &mut n.meta_idx,
+                nref,
                 ctx,
                 KfType::from_literal(EvaluatedType::String),
                 Some(EvaluatedValue::String(ss)),
             );
         }
-        ast::Ntype::Literal(ref mut lit) => {
-            calc_type_for_literal(&lit, &mut n.meta_idx, n.at, ctx)?;
+        ast::Ntype::Literal(ref lit) => {
+            calc_type_for_literal(tree, nref, &lit, ctx)?;
         }
-        ast::Ntype::Char(ref mut c) => {
+        ast::Ntype::Char(ref c) => {
             let c = c.clone();
             set_type(
-                &mut n.meta_idx,
+                nref,
                 ctx,
                 KfType::from_literal(EvaluatedType::Char),
                 Some(EvaluatedValue::Char(
@@ -405,13 +378,13 @@ fn eval_types(n: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol>
             );
         }
         ast::Ntype::True => set_type(
-            &mut n.meta_idx,
+            nref,
             ctx,
             KfType::from_literal(EvaluatedType::Bool),
             Some(EvaluatedValue::Bool(false)),
         ),
         ast::Ntype::False => set_type(
-            &mut n.meta_idx,
+            nref,
             ctx,
             KfType::from_literal(EvaluatedType::Bool),
             Some(EvaluatedValue::Bool(false)),
@@ -425,18 +398,18 @@ fn eval_types(n: &mut ast::Node, ctx: &mut Context) -> Result<(), CompileMsgCol>
 /// a:type1 OP b:type1 ==> bool
 ///
 fn calc_type_for_bin_nontransient_op(
-    a: &mut ast::Node,
-    b: &mut ast::Node,
-    parent: &mut Option<usize>,
-    at: TextPoint,
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
+    a: ast::NodeRef,
+    b: ast::NodeRef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    eval_types(a, ctx)?;
-    eval_types(b, ctx)?;
-    let t = determine_type_for_a_b(&a, &b, at, ctx)?;
+    eval_types(tree, a, ctx)?;
+    eval_types(tree, b, ctx)?;
+    let t = determine_type_for_a_b(tree, parent, a, b, ctx)?;
     // println!("type ab = {t:?}");
-    set_type_all_way_down(t.clone(), &a, ctx)?;
-    set_type_all_way_down(t, &b, ctx)?;
+    set_type_all_way_down(tree, a, ctx, &t)?;
+    set_type_all_way_down(tree, b, ctx, &t)?;
     let val = None;
     // let val = calculate_operator!(
     //     get_side_node(&a, s).unwrap().eval_val.clone().unwrap(),
@@ -466,25 +439,25 @@ fn calc_type_for_bin_nontransient_op(
 /// a:type1 OP b:type1 ==> bool
 ///
 fn calc_type_for_bin_arithmetic_nontransient_op(
-    a: &mut ast::Node,
-    b: &mut ast::Node,
-    parent: &mut Option<usize>,
-    at: TextPoint,
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
+    a: ast::NodeRef,
+    b: ast::NodeRef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    eval_types(a, ctx)?;
-    eval_types(b, ctx)?;
-    let t = determine_type_for_a_b(&a, &b, at, ctx)?;
+    eval_types(tree, a, ctx)?;
+    eval_types(tree, b, ctx)?;
+    let t = determine_type_for_a_b(tree, parent, a, b, ctx)?;
     if !t.is_numeric() && !t.is_floating() {
         return Err(vec![comp_msg::error_numeric_type_for_bin_op(
-            at,
+            tree.get(parent).at,
             t.clone(),
             t,
         )]);
     }
 
-    set_type_all_way_down(t.clone(), &a, ctx)?;
-    set_type_all_way_down(t.clone(), &b, ctx)?;
+    set_type_all_way_down(tree, a, ctx, &t)?;
+    set_type_all_way_down(tree, b, ctx, &t)?;
     set_type(
         parent,
         ctx,
@@ -502,24 +475,24 @@ fn calc_type_for_bin_arithmetic_nontransient_op(
 /// a:type1 OP b:type1 ==> type1
 ///
 fn calc_type_for_bin_arithmetic_transient_op(
-    a: &mut ast::Node,
-    b: &mut ast::Node,
-    parent: &mut Option<usize>,
-    at: TextPoint,
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
+    a: ast::NodeRef,
+    b: ast::NodeRef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    eval_types(a, ctx)?;
-    eval_types(b, ctx)?;
-    let t = determine_type_for_a_b(&a, &b, at, ctx)?;
+    eval_types(tree, a, ctx)?;
+    eval_types(tree, b, ctx)?;
+    let t = determine_type_for_a_b(tree, parent, a, b, ctx)?;
     if !t.is_numeric() && !t.is_floating() {
         return Err(vec![comp_msg::error_numeric_type_for_bin_op(
-            at,
+            tree.get(parent).at,
             t.clone(),
             t,
         )]);
     }
-    set_type_all_way_down(t.clone(), &a, ctx)?;
-    set_type_all_way_down(t.clone(), &b, ctx)?;
+    set_type_all_way_down(tree, a, ctx, &t)?;
+    set_type_all_way_down(tree, b, ctx, &t)?;
     set_type(
         parent,
         ctx,
@@ -536,28 +509,31 @@ fn calc_type_for_bin_arithmetic_transient_op(
 /// !expr:bool ==> bool
 ///
 fn calc_type_for_unary_logic_op(
-    a: &mut ast::Node,
-    parent: &mut Option<usize>,
-    at: TextPoint,
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
+    a: ast::NodeRef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    calc_type_for_bool_cond(a, parent, at, ctx)
+    calc_type_for_bool_cond(tree, parent, a, ctx)
 }
 ///
 /// Calculate type for arithmetic unary operator like:
 /// -expr:type1 ==> type1
 ///
 fn calc_type_for_unary_arithm_op(
-    a: &mut ast::Node,
-    _parent: &mut Option<usize>,
-    at: TextPoint,
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
+    a: ast::NodeRef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    eval_types(a, ctx)?;
-    let asn = get_side_node(a, ctx).expect("Side node should be calculated here");
+    eval_types(tree, a, ctx)?;
+    let asn = get_side_node(a, ctx);
     let atype = asn.eval_type.eval_type.clone();
     if !atype.is_numeric() && !atype.is_floating() {
-        return Err(vec![comp_msg::error_numeric_type_expected(at, atype)]);
+        return Err(vec![comp_msg::error_numeric_type_expected(
+            tree.get(parent).at,
+            atype,
+        )]);
     }
     Ok(())
 }
@@ -566,19 +542,21 @@ fn calc_type_for_unary_arithm_op(
 /// a:str = b:type1 ==> void
 ///
 fn calc_type_for_assign_op(
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
     a: &str,
-    b: &mut ast::Node,
-    parent: &mut Option<usize>,
-    at: TextPoint,
+    b: ast::NodeRef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    eval_types(b, ctx)?;
+    eval_types(tree, b, ctx)?;
     if let Some(variable) = ctx.scope_get_var(a) {
         if !variable.v_type.mutable.expect("Must be defined!") {
-            return Err(vec![comp_msg::error_assign_to_immutable(at)]);
+            return Err(vec![comp_msg::error_assign_to_immutable(
+                tree.get(parent).at,
+            )]);
         }
         // compare variable & expression types
-        let expr_side_node = get_side_node(b, ctx).expect("Side node should have been calculated");
+        let expr_side_node = get_side_node(b, ctx);
         let expr_type = &expr_side_node.eval_type.eval_type;
         let cmp_res = compare_types(&variable.v_type.eval_type, expr_type);
         match cmp_res {
@@ -589,12 +567,12 @@ fn calc_type_for_assign_op(
                     // we need to update variable type
                     ctx.update_var_type(a, t.clone());
                 } else {
-                    set_type_all_way_down(t.clone(), b, ctx)?;
+                    set_type_all_way_down(tree, b, ctx, t)?;
                 }
             }
             TypeComp::Different => {
                 return Err(vec![comp_msg::error_type_mismatch_var_assign(
-                    at,
+                    tree.get(parent).at,
                     a,
                     &variable.v_type.eval_type,
                     expr_type,
@@ -602,7 +580,7 @@ fn calc_type_for_assign_op(
             }
         }
     } else {
-        return Err(vec![comp_msg::error_undeclared_var(at)]);
+        return Err(vec![comp_msg::error_undeclared_var(tree.get(parent).at)]);
     }
     set_type_void(parent, ctx);
     Ok(())
@@ -612,16 +590,19 @@ fn calc_type_for_assign_op(
 /// !expr:bool ==> bool
 ///
 fn calc_type_for_bool_cond(
-    expr: &mut ast::Node,
-    _parent: &mut Option<usize>,
-    at: TextPoint,
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
+    expr: ast::NodeRef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    eval_types(expr, ctx)?;
-    let asn = get_side_node(expr, ctx).expect("Side node should be calculated here");
+    eval_types(tree, expr, ctx)?;
+    let asn = get_side_node(expr, ctx);
     let atype = asn.eval_type.eval_type.clone();
     if atype != EvaluatedType::Bool {
-        return Err(vec![comp_msg::error_bool_type_expected(at, atype)]);
+        return Err(vec![comp_msg::error_bool_type_expected(
+            tree.get(parent).at,
+            atype,
+        )]);
     }
     Ok(())
 }
@@ -630,15 +611,15 @@ fn calc_type_for_bool_cond(
 /// func(expr1, ..., exprN) -> type1
 ///
 fn calc_type_for_fn_call(
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
     fn_name: &str,
-    args: &mut [ast::Node],
-    parent: &mut Option<usize>,
-    at: TextPoint,
+    args: &[ast::NodeRef],
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
     // evaluate all expressions passed as arguments
-    for arg in args.iter_mut() {
-        eval_types(arg, ctx)?;
+    for arg in args.iter() {
+        eval_types(tree, *arg, ctx)?;
     }
     // do the validation
     if let Some(fn_def) = ctx.glob_functs.get(fn_name) {
@@ -653,20 +634,19 @@ fn calc_type_for_fn_call(
             let passed = args.len();
             let expected = fn_def.args.len();
             errors.push(comp_msg::error_fn_call_incorrect_no_args(
-                at, passed, expected,
+                tree.get(parent).at,
+                passed,
+                expected,
             ));
         }
         for (arg, arg_def) in args.iter().zip(fn_def.args.iter()) {
-            let arg_type = &get_side_node(arg, ctx)
-                .expect("Side node should be calculated here")
-                .eval_type
-                .eval_type;
+            let arg_type = get_side_node(*arg, ctx).eval_type.eval_type.clone();
             // TODO:
             let arg_type_dec = EvaluatedType::from_str(&arg_def.type_dec.typename().unwrap());
             if let Some(arg_type_dec) = arg_type_dec {
-                if *arg_type != arg_type_dec {
+                if arg_type != arg_type_dec {
                     errors.push(comp_msg::error_fn_call_arg_mismatch(
-                        arg.at,
+                        tree.get(*arg).at,
                         arg_type.clone(),
                         arg_type_dec,
                     ));
@@ -675,7 +655,7 @@ fn calc_type_for_fn_call(
                 // TODO: not the best place for reporting this error
                 // TODO:
                 let t = arg_def.type_dec.typename().unwrap().clone();
-                errors.push(comp_msg::error_unrecognised_type(arg.at, &t));
+                errors.push(comp_msg::error_unrecognised_type(tree.get(*arg).at, &t));
             }
         }
         // set return type
@@ -700,13 +680,16 @@ fn calc_type_for_fn_call(
             // TODO: not the best place for reporting return value type issues
             // TODO:
             let t = fn_def.ret.typename().unwrap().clone();
-            errors.push(comp_msg::error_unrecognised_type(at, &t));
+            errors.push(comp_msg::error_unrecognised_type(tree.get(parent).at, &t));
         }
         if errors.len() > 0 {
             return Err(errors);
         }
     } else {
-        return Err(vec![comp_msg::error_undefined_function(at, fn_name)]);
+        return Err(vec![comp_msg::error_undefined_function(
+            tree.get(parent).at,
+            fn_name,
+        )]);
     }
     Ok(())
 }
@@ -716,16 +699,16 @@ fn calc_type_for_fn_call(
 /// let a = expr; // assign expr type to a
 ///
 fn calc_type_for_var_def(
-    vardef: &mut ast::VarDef,
-    parent: &mut Option<usize>,
-    at: TextPoint,
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
+    vardef: &ast::VarDef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
     // evaluate and get the expression type
-    let expr_type = match &mut vardef.expr {
+    let expr_type = match vardef.expr {
         Some(expr) => {
-            eval_types(expr.as_mut(), ctx)?;
-            get_side_node(expr, ctx)
+            eval_types(tree, expr, ctx)?;
+            Some(get_side_node(expr, ctx))
         }
         None => None,
     };
@@ -764,7 +747,7 @@ fn calc_type_for_var_def(
                     if kf_t.eval_type == t {
                         // update expression types
                         if let Some(expr) = &vardef.expr {
-                            set_type_all_way_down(t, expr.as_ref(), ctx)?;
+                            set_type_all_way_down(tree, *expr, ctx, &t)?;
                         }
                     } else {
                         // update explicit variable type
@@ -774,7 +757,7 @@ fn calc_type_for_var_def(
                 TypeComp::Different => {
                     // obviously an error
                     return Err(vec![comp_msg::error_type_mismatch_var_assign(
-                        at,
+                        tree.get(parent).at,
                         &vardef.name,
                         &kf_t.eval_type,
                         &expr_type.eval_type.eval_type,
@@ -792,8 +775,8 @@ fn calc_type_for_var_def(
         vardef.name.clone(),
         VarDefinition {
             v_type: kf_t,
-            def_at: at,
-            side_node_indx: parent.expect("Side node not defined for 'variable definition'"),
+            def_at: tree.get(parent).at,
+            side_node_ref: SideNodeRef(parent.as_usize() as u32),
         },
     );
     Ok(())
@@ -802,9 +785,9 @@ fn calc_type_for_var_def(
 /// Calculate type for literal token
 ///
 fn calc_type_for_literal(
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
     lit: &str,
-    parent: &mut Option<usize>,
-    at: TextPoint,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
     let (t, v) = classify_literal(&lit);
@@ -825,7 +808,7 @@ fn calc_type_for_literal(
             );
         } else {
             // error
-            return Err(vec![comp_msg::error_undeclared_var(at)]);
+            return Err(vec![comp_msg::error_undeclared_var(tree.get(parent).at)]);
         }
     } else {
         set_type(
@@ -891,64 +874,36 @@ fn compare_types(a: &EvaluatedType, b: &EvaluatedType) -> TypeComp {
     TypeComp::Different
 }
 
-fn set_type(meta_idx: &mut Option<usize>, ctx: &mut Context, t: KfType, v: Option<EvaluatedValue>) {
-    match meta_idx {
-        Some(idx) => {
-            ctx.side_nodes[*idx].eval_type = t;
-            ctx.side_nodes[*idx].eval_val = v;
-        }
-        None => {
-            ctx.side_nodes.push(SideNode {
-                eval_type: t,
-                eval_val: v,
-            });
-            *meta_idx = Some(ctx.side_nodes.len() - 1);
-        }
-    }
+fn set_type(node: ast::NodeRef, ctx: &mut Context, t: KfType, v: Option<EvaluatedValue>) {
+    ctx.side_nodes[node.as_usize()].eval_type = t;
+    ctx.side_nodes[node.as_usize()].eval_val = v;
 }
-fn update_type(n: &ast::Node, ctx: &mut Context, t: EvaluatedType) {
-    let idx = n
-        .meta_idx
-        .expect("udapte_type: side node should be evaluated!");
-    ctx.side_nodes[idx].eval_type.eval_type = t;
+fn update_type(n: ast::NodeRef, ctx: &mut Context, t: EvaluatedType) {
+    ctx.side_nodes[n.as_usize()].eval_type.eval_type = t;
 }
 
-fn set_type_void(meta_idx: &mut Option<usize>, ctx: &mut Context) {
+fn set_type_void(node: ast::NodeRef, ctx: &mut Context) {
     let t = KfType {
         mutable: None,
         eval_type: EvaluatedType::Void,
     };
-    match meta_idx {
-        Some(idx) => {
-            ctx.side_nodes[*idx].eval_type = t;
-            ctx.side_nodes[*idx].eval_val = None;
-        }
-        None => {
-            ctx.side_nodes.push(SideNode {
-                eval_type: t,
-                eval_val: None,
-            });
-            *meta_idx = Some(ctx.side_nodes.len() - 1);
-        }
-    }
+    ctx.side_nodes[node.as_usize()].eval_type = t;
+    ctx.side_nodes[node.as_usize()].eval_val = None;
 }
 
-pub fn get_side_node<'a>(n: &'a ast::Node, ctx: &'a Context) -> Option<&'a SideNode> {
-    if let Some(side_node) = n.meta_idx {
-        Some(&ctx.side_nodes[side_node])
-    } else {
-        None
-    }
+pub fn get_side_node<'a>(n: ast::NodeRef, ctx: &'a Context) -> &'a SideNode {
+    &ctx.side_nodes[n.as_usize()]
 }
 
 fn determine_type_for_a_b(
-    a: &ast::Node,
-    b: &ast::Node,
-    at: TextPoint,
+    tree: &ast::Tree,
+    parent: ast::NodeRef,
+    a: ast::NodeRef,
+    b: ast::NodeRef,
     ctx: &Context,
 ) -> Result<EvaluatedType, CompileMsgCol> {
-    let asn = get_side_node(a, ctx).expect("Side node should be calculated here!");
-    let bsn = get_side_node(b, ctx).expect("Side node should be calculated here (2)");
+    let asn = get_side_node(a, ctx);
+    let bsn = get_side_node(b, ctx);
 
     // println!("asn={:?}\nbsn={:?}", asn, bsn);
 
@@ -988,41 +943,40 @@ fn determine_type_for_a_b(
 
     if atype != btype {
         return Err(vec![comp_msg::error_type_mismatch_for_bin_op(
-            at, atype, btype,
+            tree.get(parent).at,
+            atype,
+            btype,
         )]);
     }
     Ok(atype)
 }
 
 fn set_type_all_way_down(
-    t: EvaluatedType,
-    n: &ast::Node,
+    tree: &ast::Tree,
+    n: ast::NodeRef,
     ctx: &mut Context,
+    t: &EvaluatedType,
 ) -> Result<(), CompileMsgCol> {
     if !t.is_concrete() {
         // can't propagate a type that is not deduced yet
         return Ok(());
     }
-    let vis = |n: &ast::Node, ctx: &mut Context| -> Result<bool, CompileMsgCol> {
-        if let ast::Ntype::FnCall(_, _) = n.val {
-            // we don't want to change evaluated type for e.g. function parameters
-            return Ok(false);
-        }
-        if let ast::Ntype::Literal(ref l) = n.val {
-            // that can be a variable, if so we have to update the cache
-            ctx.update_var_type(&l, t.clone());
-        }
-        update_type(n, ctx, t.clone());
-        Ok(true)
-    };
-    walkthrough_generic(n, ctx, &vis)?;
+    let vis =
+        |tree: &ast::Tree, node: ast::NodeRef, ctx: &mut Context| -> Result<bool, CompileMsgCol> {
+            let n = tree.get(node);
+            if let ast::Ntype::FnCall(_, _) = n.val {
+                // we don't want to change evaluated type for e.g. function parameters
+                return Ok(false);
+            }
+            if let ast::Ntype::Literal(ref l) = n.val {
+                // that can be a variable, if so we have to update the cache
+                ctx.update_var_type(&l, t.clone());
+            }
+            update_type(node, ctx, t.clone());
+            Ok(true)
+        };
+    walkthrough_generic(tree, n, ctx, &vis)?;
     Ok(())
-}
-
-#[derive(Debug)]
-pub struct SideNode {
-    pub eval_type: KfType,
-    pub eval_val: Option<EvaluatedValue>,
 }
 
 fn classify_literal(input: &str) -> (EvaluatedType, Option<EvaluatedValue>) {
@@ -1088,87 +1042,88 @@ fn classify_literal(input: &str) -> (EvaluatedType, Option<EvaluatedValue>) {
 }
 
 fn walkthrough_generic(
-    n: &ast::Node,
+    tree: &ast::Tree,
+    nref: ast::NodeRef,
     ctx: &mut Context,
-    visitor: &impl Fn(&ast::Node, &mut Context) -> Result<bool, CompileMsgCol>,
+    visitor: &impl Fn(&ast::Tree, ast::NodeRef, &mut Context) -> Result<bool, CompileMsgCol>,
 ) -> Result<(), CompileMsgCol> {
-    let continue_descent = visitor(n, ctx)?;
+    let continue_descent = visitor(tree, nref, ctx)?;
     if !continue_descent {
         return Ok(());
     }
-    match &n.val {
+    match &tree.get(nref).val {
         ast::Ntype::Eq(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Neq(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Gt(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Ge(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Lt(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Le(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Plus(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Minus(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Slash(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Star(a, b) => {
-            walkthrough_generic(a, ctx, visitor)?;
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         ast::Ntype::Bang(a) => {
-            walkthrough_generic(a, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
         }
         ast::Ntype::UMinus(a) => {
-            walkthrough_generic(a, ctx, visitor)?;
+            walkthrough_generic(tree, *a, ctx, visitor)?;
         }
         // assign
         ast::Ntype::Assign(_, b) => {
-            walkthrough_generic(b, ctx, visitor)?;
+            walkthrough_generic(tree, *b, ctx, visitor)?;
         }
         // control flow
         ast::Ntype::If(if_) => {
-            walkthrough_generic(&if_.cond, ctx, visitor)?;
-            walkthrough_generic(&if_.body, ctx, visitor)?;
+            walkthrough_generic(tree, if_.cond, ctx, visitor)?;
+            walkthrough_generic(tree, if_.body, ctx, visitor)?;
             for el in if_.elif.iter() {
-                walkthrough_generic(&el.cond, ctx, visitor)?;
-                walkthrough_generic(&el.body, ctx, visitor)?;
+                walkthrough_generic(tree, el.cond, ctx, visitor)?;
+                walkthrough_generic(tree, el.body, ctx, visitor)?;
             }
-            if let Some(els) = if_.else_body.as_ref() {
-                walkthrough_generic(&els, ctx, visitor)?;
+            if let Some(els) = if_.else_body {
+                walkthrough_generic(tree, els, ctx, visitor)?;
             }
         }
         ast::Ntype::For(for_) => {
-            walkthrough_generic(&for_.in_expr, ctx, visitor)?;
-            walkthrough_generic(&for_.body, ctx, visitor)?;
+            walkthrough_generic(tree, for_.in_expr, ctx, visitor)?;
+            walkthrough_generic(tree, for_.body, ctx, visitor)?;
         }
         ast::Ntype::While(while_) => {
-            walkthrough_generic(&while_.cond, ctx, visitor)?;
-            walkthrough_generic(&while_.body, ctx, visitor)?;
+            walkthrough_generic(tree, while_.cond, ctx, visitor)?;
+            walkthrough_generic(tree, while_.body, ctx, visitor)?;
         }
         ast::Ntype::Loop(loop_) => {
-            walkthrough_generic(&loop_.body, ctx, visitor)?;
+            walkthrough_generic(tree, loop_.body, ctx, visitor)?;
         }
         ast::Ntype::Break => {}
         ast::Ntype::Continue => {}
@@ -1181,27 +1136,27 @@ fn walkthrough_generic(
             // TODO: similar case to Ntype::Struct
         }
         ast::Ntype::Impl(impl_) => {
-            for n in impl_.scope.iter() {
-                walkthrough_generic(n, ctx, visitor)?;
+            for node in impl_.scope.iter() {
+                walkthrough_generic(tree, *node, ctx, visitor)?;
             }
         }
         ast::Ntype::Scope(a) => {
-            for n in a.iter() {
-                walkthrough_generic(n, ctx, visitor)?;
+            for node in a.iter() {
+                walkthrough_generic(tree, *node, ctx, visitor)?;
             }
         }
         ast::Ntype::FnDef(fndef) => {
             // TODO: args and ret might contains nodes
-            walkthrough_generic(&fndef.body, ctx, visitor)?;
+            walkthrough_generic(tree, fndef.body, ctx, visitor)?;
         }
         ast::Ntype::FnCall(_name, args) => {
-            for n in args.iter() {
-                walkthrough_generic(n, ctx, visitor)?;
+            for node in args.iter() {
+                walkthrough_generic(tree, *node, ctx, visitor)?;
             }
         }
         ast::Ntype::VarDef(vardef) => {
-            if let Some(e) = vardef.expr.as_ref() {
-                walkthrough_generic(e, ctx, visitor)?;
+            if let Some(e) = vardef.expr {
+                walkthrough_generic(tree, e, ctx, visitor)?;
             }
         }
         // terminals
@@ -1237,7 +1192,7 @@ mod tests {
         }
     }
 
-    fn parse_code(code: &str) -> Result<(ast::Node, ast::Node), String> {
+    fn parse_code(code: &str) -> Result<(ast::Tree, ast::Tree), String> {
         let (tokens, errors) = lexer::tokenize(&Lang::new(), compiler::BUILT_IN_STUFF);
         throw_errors(errors)?;
         let ast_built_in = parser::parse(&tokens).unwrap();
