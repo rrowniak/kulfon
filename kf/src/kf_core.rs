@@ -5,8 +5,7 @@
 // Created on: 04.07.2024
 // ---------------------------------------------------
 use crate::ast;
-use crate::comp_msg;
-use crate::comp_msg::{CompileMsgCol, TextPoint};
+use crate::comp_msg::{self, CompileMsgCol, TextPoint};
 use crate::type_system::*;
 use std::collections::HashMap;
 
