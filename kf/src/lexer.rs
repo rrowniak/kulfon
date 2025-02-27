@@ -10,13 +10,20 @@ use crate::comp_msg::{TextPoint, CompileMsgCol};
 use crate::comp_msg;
 use std::fmt;
 
+/// Represents different kinds of tokens that can be identified in a source file.
 #[derive(Debug, PartialEq)]
 pub enum TokenKind {
+    /// A keyword, such as `fn`, `let`, or `if`.
     Keyword,
+    /// A literal value, such as numbers (`42`, `3.14`) or `true`/`false`.
     Literal,
+    /// A symbol, such as operators (`+`, `-`, `*`, `/`), punctuation (`;`, `,`), or brackets (`{}`, `[]`, `()`).
     Symbol,
+    /// A string literal, typically enclosed in quotes (`"hello"`).
     String,
+    /// A single character literal, enclosed in single quotes (`'a'`).
     Character,
+    /// A comment, typically ignored by the compiler/interpreter (`// this is a comment` or `/* block comment */`).
     Comment,
 }
 
@@ -33,11 +40,16 @@ impl fmt::Display for TokenKind {
     }
 }
 
+/// Represents a single token identified in the source code.
 pub struct Token<'a> {
+    /// The kind of token (e.g., keyword, literal, symbol).
     pub kind: TokenKind,
+    /// The actual text of the token as it appears in the source.
     pub text: &'a str,
+    /// The starting position of the token in the source code.
     pub start: TextPoint,
-    pub end: TextPoint,
+    // /// The ending position of the token in the source code.
+    // pub end: TextPoint,
 }
 
 impl<'a> fmt::Display for Token<'a> {
@@ -49,30 +61,78 @@ impl<'a> fmt::Display for Token<'a> {
         write!(f, "']")
     }
 }
+
+/// Tokenizes the given source code based on the specified language rules.
+///
+/// # Arguments
+///
+/// * `lang` - A reference to the `Lang` structure, which defines the syntax rules for tokenization.
+/// * `code` - A string slice representing the source code to be tokenized.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - A vector of `Token` structs representing the identified tokens.
+/// - A `CompileMsgCol` collection, which may contain warnings or errors encountered during tokenization.
+///
+/// # Example
+///
+/// ```rust
+/// let lang = Lang::new(); // Assuming a valid Lang instance
+/// let code = "fn main() {}";
+/// let (tokens, messages) = tokenize(&lang, code);
+/// ```
 pub fn tokenize<'a, 'b>(lang: &'b Lang<'b>, code: &'a str) -> (Vec<Token<'a>>, CompileMsgCol) {
     let mut t = Tokenizer::new(lang, code);
     t.tokenize()
 }
 
+/// A tokenizer responsible for scanning and converting source code into tokens.
+/// This struct maintains the current position and handles character iteration.
 struct Tokenizer<'a, 'b> {
+    /// Reference to the language definition, used for keyword and syntax rules.
     lang: &'b Lang<'b>,
+    /// The source code being tokenized. 
     code: &'a str,
+    /// The current position in the text (line and column tracking).
     curr_point: TextPoint,
+    /// Number of characters to skip before processing the next token.
     skip_n: usize,
+    /// The current byte position in the source code.
     pos: usize,
+    /// Iterator over the characters in the source code, with byte indices.
     iter: std::str::CharIndices<'a>,
+    /// The previous character processed (used for context-sensitive parsing).
     prev_c: char,
+    /// If `true`, the current tokenization pass should be repeated without consuming a new character.
     repeat_this_pass: bool,
 }
 
+/// Represents the current state of the tokenizer during tokenization.
 #[derive(Clone)]
 enum TokenizeState<'a> {
+    /// The tokenizer is idle, waiting for the next character to process.
     Idle,
+    /// The tokenizer is currently parsing a literal (e.g., a number or string).
     ParseLiteral,
+    /// The tokenizer is processing a range-based construct (e.g., strings or comments).
+    /// Stores a `RangeBased` instance that holds range-specific details.
     ParseRange(RangeBased<'a>),
 }
 
+/// The `Tokenizer` is responsible for breaking a source code string into tokens.
+/// It iterates over characters while maintaining contextual state to recognize keywords, literals, and symbols.
 impl<'a, 'b> Tokenizer<'a, 'b> {
+    /// Creates a new `Tokenizer` for the given language and source code.
+    ///
+    /// # Arguments
+    ///
+    /// * `lang` - A reference to the language definition containing tokenization rules.
+    /// * `code` - The source code to be tokenized.
+    ///
+    /// # Returns
+    ///
+    /// A `Tokenizer` instance ready to process the given source code.
     fn new(lang: &'b Lang, code: &'a str) -> Tokenizer<'a, 'b> {
         Tokenizer {
             lang,
@@ -86,6 +146,7 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         }
     }
 
+    /// Updates the `current_point` for previously processed character, taking into consideration a new line character.
     fn update_prev_c(&mut self) {
         if self.prev_c == '\n' {
             self.curr_point.col = 1;
@@ -95,6 +156,11 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         }
     }
 
+    /// Advances the iterator to the next character in the source code.
+    ///
+    /// # Returns
+    ///
+    /// An `Option<char>` containing the next character if available, otherwise `None`.
     fn next(&mut self) -> Option<char> {
         if self.repeat_this_pass {
             self.repeat_this_pass = false;
@@ -118,6 +184,13 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         }
     }
 
+    /// Performs tokenization on the source code, generating a list of tokens.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// * A `Vec<Token<'a>>` - The list of recognized tokens.
+    /// * A `Vec<CompileMessage>` - Any messages or warnings encountered during tokenization.
     fn tokenize(&mut self) -> (Vec<Token<'a>>, CompileMsgCol) {
         let mut tokens: Vec<Token> = Vec::new();
         let mut errors  = CompileMsgCol::new(); 
@@ -174,10 +247,10 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
                                     kind: TokenKind::Character,
                                     text: &self.code[self.pos + 1..self.pos + 2],
                                     start: self.curr_point,
-                                    end: TextPoint {
-                                        line: self.curr_point.line,
-                                        col: self.curr_point.col + 2,
-                                    },
+                                    // end: TextPoint {
+                                    //     line: self.curr_point.line,
+                                    //     col: self.curr_point.col + 2,
+                                    // },
                                 });
                                 continue;
                             }
@@ -201,10 +274,10 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
                                             kind: TokenKind::Character,
                                             text: &self.code[self.pos + 1..self.pos + 3],
                                             start: self.curr_point,
-                                            end: TextPoint {
-                                                line: self.curr_point.line,
-                                                col: self.curr_point.col + 3,
-                                            },
+                                            // end: TextPoint {
+                                            //     line: self.curr_point.line,
+                                            //     col: self.curr_point.col + 3,
+                                            // },
                                         });
                                         continue;
                                     }
@@ -240,10 +313,10 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
                                 kind: TokenKind::Symbol,
                                 text: &self.code[self.pos..self.pos + s.len()],
                                 start: self.curr_point,
-                                end: TextPoint {
-                                    line: self.curr_point.line,
-                                    col: self.curr_point.col + self.skip_n,
-                                },
+                                // end: TextPoint {
+                                //     line: self.curr_point.line,
+                                //     col: self.curr_point.col + self.skip_n,
+                                // },
                             });
                             found = true;
                             status = TokenizeState::Idle;
@@ -292,7 +365,7 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
                             kind,
                             text: &self.code[start_pos..self.pos],
                             start: start_point,
-                            end: self.curr_point,
+                            // end: self.curr_point,
                         });
                         self.skip_n = r.get_range().end.len() - 1;
                         continue;
@@ -320,7 +393,7 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
                         kind,
                         text: &self.code[start_pos..],
                         start: start_point,
-                        end: self.curr_point,
+                        // end: self.curr_point,
                     });
                 } else {
                     errors.push(comp_msg::error_eof_unterminated_string(self.curr_point));
@@ -330,6 +403,15 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         (tokens, errors)
     }
 
+    /// Checks if the given phrase matches the upcoming characters in the source code.
+    ///
+    /// # Arguments
+    ///
+    /// * `phrase` - A string slice representing the phrase to look ahead for.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the phrase matches the upcoming sequence, otherwise `false`.
     fn look_ahead(&self, phrase: &str) -> bool {
         if let Some(code) = self.code.get(self.pos..) {
             code.starts_with(phrase)
@@ -338,6 +420,15 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         }
     }
 
+    /// Retrieves the nth character from the current position without consuming it.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - The number of characters ahead to look.
+    ///
+    /// # Returns
+    ///
+    /// An `Option<char>` containing the character if available, otherwise `None`.
     fn get_nth(&self, offset: usize) -> Option<char> {
         if let Some(nth) = self.code.get(offset..offset + 1) {
             nth.chars().next()
@@ -346,6 +437,16 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         }
     }
 
+    /// Generates a token representing either a literal or a keyword, depending on the parsed content.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_pos` - The starting position of the token in the source code.
+    /// * `start_point` - The textual coordinates (line and column) where the token begins.
+    ///
+    /// # Returns
+    ///
+    /// A `Token<'a>` representing the parsed literal or keyword.
     fn gen_token_literal_or_keyword(&self, start_pos: usize, start_point: TextPoint) -> Token<'a> {
         let text = &self.code[start_pos..self.pos];
         let kind = if self.lang.keywords.contains(&text) {
@@ -358,7 +459,7 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
             kind,
             text,
             start: start_point,
-            end: self.curr_point,
+            // end: self.curr_point,
         }
     }
 }
