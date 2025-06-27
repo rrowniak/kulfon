@@ -1,0 +1,133 @@
+# This is a language definition
+# Based on that definition the build.rs will generate ./src/kf_def.rs source file
+# Do not modify the ./src/kf_def.rs source file directly.
+
+# Token kind: keyword, res_keyword, symbol, literal, special_literal, operator
+
+# Token kind        Literal         Enum value
+
+keyword             if              KwIf
+keyword             else            KwElse
+keyword             for             KwFor
+keyword             while           KwWhile
+keyword             loop            KwLoop
+keyword             fn              KwFn
+keyword             pub             KwPub
+keyword             let             KwLet
+keyword             mut             KwMut
+keyword             in              KwIn
+keyword             break           KwBreak
+keyword             continue        KwContinue
+keyword             struct          KwStruct
+keyword             enum            KwEnum
+keyword             impl            KwImpl
+keyword             self            KwSelf
+keyword             Self            KwSelfT
+
+special_literal     true            SlTrue
+special_literal     false           SlFalse
+
+symbol              {               SymCurlyOpen
+symbol              }               SymCurlyClose
+symbol              (               SymParenthOpen
+symbol              )               SymParenthClose
+symbol              [               SymBracketOpen
+symbol              ]               SymBracketClose
+symbol              &               SymAmpersand
+symbol              ::              SymScopeResolution
+symbol              @               SymAt
+symbol              ;               SymSemi
+symbol              :               SymColon
+symbol              ->              SymArrow
+symbol              .               SymDot
+symbol              ,               SymComma
+symbol              ...             SymEllipsis
+symbol              #[              SymHashBracket
+symbol              _               SymUnderscore
+
+operator            ==              OpEq
+operator            !=              OpNe
+operator            >               OpGt
+operator            >=              OpGe
+operator            <               OpLt
+operator            <=              OpLe
+operator            +               OpPlus
+operator            -               OpMinus
+operator            /               OpSlash
+operator            *               OpStar
+operator            !               OpBang
+operator            =               OpAssign
+operator            &&              OpAnd
+operator            ||              OpOr
+operator            ++              OpPlusPlus
+operator            --              OpMinusMinus
+
+#operator            %               Op
+#operator            ^               Op
+#operator            |               Op
+#operator            ~               Op
+#operator            #               Op
+#operator            $               Op
+#operator            ?               Op
+#operator            ;               Op
+#operator            :               Op
+#operator            ,               Op
+#operator            .               Op
+#operator            '               Op
+#operator            \               Op
+#operator                            Op
+#operator            ,               Op
+#operator                            Op
+#operator            ..              Op
+#operator            ..=                 Op
+#operator            <<              Op
+#operator            >>              Op
+#operator            +=              Op
+#operator            -=              Op
+#operator            *=              Op
+#operator            /=              Op
+#operator            %=              Op
+#operator            ^=              Op
+#operator            &=              Op
+#operator            |=              Op
+#operator            <<=                 Op
+#operator            >>=                 Op
+#operator            #!              Op
+#operator            #[              Op
+
+
+
+#res_keyword         as              ResKeyword
+#res_keyword         const           ResKeyword
+#res_keyword         crate           ResKeyword
+#res_keyword         extern          ResKeyword
+#res_keyword         match           ResKeyword
+#res_keyword         mod             ResKeyword
+#res_keyword         move            ResKeyword
+#res_keyword         ref             ResKeyword
+#res_keyword         return          ResKeyword
+#res_keyword         static          ResKeyword
+#res_keyword         super           ResKeyword
+#res_keyword         trait           ResKeyword
+#res_keyword         type            ResKeyword
+#res_keyword         unsafe          ResKeyword
+#res_keyword         use"            ResKeyword
+#res_keyword         where           ResKeyword
+#res_keyword         abstract        ResKeyword
+#res_keyword         become          ResKeyword
+#res_keyword         box             ResKeyword
+#res_keyword         do              ResKeyword
+#res_keyword         final           ResKeyword
+#res_keyword         macro           ResKeyword
+#res_keyword         override        ResKeyword
+#res_keyword         try             ResKeyword
+#res_keyword         virtual         ResKeyword
+#res_keyword         alignof         ResKeyword
+#res_keyword         offsetof        ResKeyword
+#res_keyword         priv            ResKeyword
+#res_keyword         pure            ResKeyword
+#res_keyword         sizeof          ResKeyword
+#res_keyword         typeof          ResKeyword
+#res_keyword         unsized         ResKeyword
+#res_keyword         yield           ResKeyword
+

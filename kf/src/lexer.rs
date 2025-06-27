@@ -449,7 +449,7 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
     /// A `Token<'a>` representing the parsed literal or keyword.
     fn gen_token_literal_or_keyword(&self, start_pos: usize, start_point: TextPoint) -> Token<'a> {
         let text = &self.code[start_pos..self.pos];
-        let kind = if self.lang.keywords.contains(&text) {
+        let kind = if self.lang.is_keyword(&text) {
             TokenKind::Keyword
         } else {
             TokenKind::Literal

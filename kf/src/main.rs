@@ -12,6 +12,7 @@ mod comp_msg;
 mod lang_def;
 mod lexer;
 mod kf_core;
+mod kf_def;
 mod parse_iter;
 mod parser;
 mod type_system;
