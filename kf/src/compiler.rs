@@ -7,7 +7,7 @@
 use crate::cbackend;
 use crate::comp_msg;
 use crate::kf_core;
-use crate::lang_def;
+use crate::lex_structs;
 use crate::lexer;
 use crate::parser;
 
@@ -36,7 +36,7 @@ enum Option<R> {
 "#;
 
 pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Result<(), String> {
-    let kulfon_lang = lang_def::Lang::new();
+    let kulfon_lang = lex_structs::Lang::new();
     // parse built-in stuff
     let (tokens, errors) = lexer::tokenize(&kulfon_lang, BUILT_IN_STUFF);
     if errors.len() > 0 {

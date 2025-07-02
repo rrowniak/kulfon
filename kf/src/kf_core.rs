@@ -1172,7 +1172,7 @@ fn walkthrough_generic(
 mod tests {
     use super::*;
     use crate::compiler;
-    use crate::lang_def::Lang;
+    use crate::lex_structs::Lang;
     use crate::lexer;
     use crate::parser;
 

@@ -5,7 +5,7 @@
 // Created on: 04.06.2024
 // ---------------------------------------------------
 use crate::comp_msg::TextPoint;
-use crate::kf_def::{KfTokKind, SPEC_SYMBOLS};
+use crate::lex_def::{KfTokKind, SPEC_SYMBOLS};
 
 #[derive(Debug)]
 pub struct KfToken {

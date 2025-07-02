@@ -7,8 +7,8 @@
 use crate::ast;
 use crate::comp_msg;
 use crate::comp_msg::TextPoint;
-use crate::lang_def::KfToken;
-use crate::kf_def::KfTokKind;
+use crate::lex_structs::KfToken;
+use crate::lex_def::KfTokKind;
 use crate::lexer;
 use crate::parse_iter::ParseIter;
 
@@ -764,7 +764,7 @@ fn error_eof() -> comp_msg::CompileMsgCol {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lang_def::Lang;
+    use crate::lex_structs::Lang;
 
     fn throw_errors(errs: ParsingErrs) -> Result<(), String> {
         if errs.len() == 0 {

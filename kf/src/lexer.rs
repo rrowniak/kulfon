@@ -5,7 +5,7 @@
 // Created on: 04.06.2024
 // ---------------------------------------------------
 
-use crate::lang_def::{Lang, RangeBased};
+use crate::lex_structs::{Lang, RangeBased};
 use crate::comp_msg::{TextPoint, CompileMsgCol};
 use crate::comp_msg;
 use std::fmt;

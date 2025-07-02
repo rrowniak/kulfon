@@ -4,8 +4,8 @@
 // License: Read LICENSE file
 // Created on: 23.07.2024
 // ---------------------------------------------------
-use crate::kf_def::KfTokKind;
-use crate::lang_def::KfToken;
+use crate::lex_def::KfTokKind;
+use crate::lex_structs::KfToken;
 use crate::type_system::EvaluatedType;
 
 #[derive(Debug, Copy, Clone)]
