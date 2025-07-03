@@ -117,25 +117,10 @@ impl KfTokKind {
         }
     }
 
-    pub fn is_symbol(&self) -> bool {
+    pub fn is_special_literal(&self) -> bool {
         matches!(self,
-            KfTokKind::SymCurlyOpen | 
-            KfTokKind::SymCurlyClose | 
-            KfTokKind::SymParenthOpen | 
-            KfTokKind::SymParenthClose | 
-            KfTokKind::SymBracketOpen | 
-            KfTokKind::SymBracketClose | 
-            KfTokKind::SymAmpersand | 
-            KfTokKind::SymScopeResolution | 
-            KfTokKind::SymAt | 
-            KfTokKind::SymSemi | 
-            KfTokKind::SymColon | 
-            KfTokKind::SymArrow | 
-            KfTokKind::SymDot | 
-            KfTokKind::SymComma | 
-            KfTokKind::SymEllipsis | 
-            KfTokKind::SymHashBracket | 
-            KfTokKind::SymUnderscore
+            KfTokKind::SlTrue | 
+            KfTokKind::SlFalse
         )
     }
 
@@ -161,6 +146,28 @@ impl KfTokKind {
         )
     }
 
+    pub fn is_symbol(&self) -> bool {
+        matches!(self,
+            KfTokKind::SymCurlyOpen | 
+            KfTokKind::SymCurlyClose | 
+            KfTokKind::SymParenthOpen | 
+            KfTokKind::SymParenthClose | 
+            KfTokKind::SymBracketOpen | 
+            KfTokKind::SymBracketClose | 
+            KfTokKind::SymAmpersand | 
+            KfTokKind::SymScopeResolution | 
+            KfTokKind::SymAt | 
+            KfTokKind::SymSemi | 
+            KfTokKind::SymColon | 
+            KfTokKind::SymArrow | 
+            KfTokKind::SymDot | 
+            KfTokKind::SymComma | 
+            KfTokKind::SymEllipsis | 
+            KfTokKind::SymHashBracket | 
+            KfTokKind::SymUnderscore
+        )
+    }
+
     pub fn is_operator(&self) -> bool {
         matches!(self,
             KfTokKind::OpEq | 
@@ -179,13 +186,6 @@ impl KfTokKind {
             KfTokKind::OpOr | 
             KfTokKind::OpPlusPlus | 
             KfTokKind::OpMinusMinus
-        )
-    }
-
-    pub fn is_special_literal(&self) -> bool {
-        matches!(self,
-            KfTokKind::SlTrue | 
-            KfTokKind::SlFalse
         )
     }
 

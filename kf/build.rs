@@ -8,15 +8,12 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    const KF_LANG_DEF: &str = "kf_lex.def";
-    println!("cargo:rerun-if-changed={}", KF_LANG_DEF);
+    println!("cargo:rerun-if-changed=kf_lex.def");
     let dest_path = Path::new("src").join("lex_def.rs");
-    generate_lex_grammar(Path::new(KF_LANG_DEF), &dest_path);
+    generate_lex_grammar(include_str!("kf_lex.def"), &dest_path);
 }
 
-fn generate_lex_grammar(input_f: &Path, output_f: &Path) {
-    let input = fs::read_to_string(&input_f).expect("Cannot read file");
-
+fn generate_lex_grammar(input: &str, output_f: &Path) {
     let mut variants = Vec::new();
     let mut from_literal = Vec::new();
     let mut kinds = Vec::new();

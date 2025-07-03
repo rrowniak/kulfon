@@ -8,9 +8,9 @@ use crate::comp_msg::TextPoint;
 use crate::lex_def::{KfTokKind, SPEC_SYMBOLS};
 
 #[derive(Debug)]
-pub struct KfToken {
+pub struct KfToken<'a> {
     pub kind: KfTokKind,
-    pub text: String,
+    pub text: &'a str,
     pub at: TextPoint,
 }
 

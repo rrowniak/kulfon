@@ -34,7 +34,7 @@ type ParsingResult<T> = Result<T, ParsingErrs>;
 /// - A `ParsingErrs`: a collection of errors or warnings encountered during conversion,
 ///   such as unexpected or malformed tokens.
 ///
-fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErrs) {
+fn convert_tok_to_kftok<'a>(tokens: &Vec<lexer::Token<'a>>) -> (Vec<KfToken<'a>>, ParsingErrs) {
     let mut kftokens = Vec::new();
     let errors = Vec::new();
 
@@ -60,7 +60,7 @@ fn convert_tok_to_kftok(tokens: &Vec<lexer::Token>) -> (Vec<KfToken>, ParsingErr
         };
         kftokens.push(KfToken {
             kind: new_kind,
-            text: t.text.into(),
+            text: t.text,
             at: t.start,
         });
     }
@@ -78,13 +78,13 @@ pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::Tree> {
 }
 
 struct KfParser<'a> {
-    iter: ParseIter<'a, KfToken>,
+    iter: ParseIter<'a, KfToken<'a>>,
     // estimated AST tree size
     cap: usize,
 }
 
 impl<'a> KfParser<'a> {
-    fn new(tokens: &[KfToken]) -> KfParser {
+    fn new(tokens: &'a [KfToken]) -> KfParser<'a> {
         KfParser {
             iter: ParseIter::new(tokens),
             cap: tokens.len()
@@ -491,25 +491,27 @@ impl<'a> KfParser<'a> {
 
     fn parse_primary(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let t = self.get_curr()?;
+        let at = t.at;
+        let text = t.text.into();
         if self.match_current_tok(KfTokKind::SlTrue) {
-            return Ok(tree.push(ast::Node::new(ast::Ntype::True, t.at)));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::True, at)));
         } else if self.match_current_tok(KfTokKind::SlFalse) {
-            return Ok(tree.push(ast::Node::new(ast::Ntype::False, t.at)));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::False, at)));
         } else if self.check_tok_sequence(&[KfTokKind::Literal, KfTokKind::SymParenthOpen]) {
             // this is a function call
             return self.parse_fn_call(tree);
         } else if self.match_current_tok(KfTokKind::LitChar) {
-            return Ok(tree.push(ast::Node::new(ast::Ntype::Char(t.text.clone()), t.at)));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::Char(text), at)));
         } else if self.match_current_tok(KfTokKind::LitString) {
-            return Ok(tree.push(ast::Node::new(ast::Ntype::String(t.text.clone()), t.at)));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::String(text), at)));
         } else if self.match_current_tok(KfTokKind::Literal) {
-            return Ok(tree.push(ast::Node::new(ast::Ntype::Literal(t.text.clone()), t.at)));
+            return Ok(tree.push(ast::Node::new(ast::Ntype::Literal(text), at)));
         } else if self.match_current_tok(KfTokKind::SymParenthOpen) {
             let expr = self.parse_expression(tree)?;
             self.consume_tok(KfTokKind::SymParenthClose)?;
             return Ok(expr);
         }
-        Err(vec![comp_msg::error_invalid_primary_expression(t.at)])
+        Err(vec![comp_msg::error_invalid_primary_expression(at)])
     }
 
     fn parse_fn_call(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
@@ -747,7 +749,7 @@ impl<'a> KfParser<'a> {
             Some(t) => {
                 if t.kind == KfTokKind::Literal {
                     self.iter.next();
-                    return Ok(t.text.clone());
+                    return Ok(t.text.into());
                 } else {
                     return Err(vec![comp_msg::error_expected_literal(&t)]);
                 }
