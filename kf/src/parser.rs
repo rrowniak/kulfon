@@ -7,8 +7,8 @@
 use crate::ast;
 use crate::comp_msg;
 use crate::comp_msg::TextPoint;
-use crate::lex_structs::KfToken;
 use crate::lex_def::KfTokKind;
+use crate::lex_structs::KfToken;
 use crate::lexer;
 use crate::parse_iter::ParseIter;
 
@@ -68,6 +68,34 @@ fn convert_tok_to_kftok<'a>(tokens: &Vec<lexer::Token<'a>>) -> (Vec<KfToken<'a>>
     (kftokens, errors)
 }
 
+/// Parses a sequence of lexer tokens into an abstract syntax tree (AST).
+///
+/// This is the main entry point of the Kulfon compiler's parser. It takes a vector
+/// of tokens produced by the lexer and performs recursive descent parsing to
+/// construct a syntax tree representing the program's structure.
+///
+/// The parser will return either a fully built AST (`ast::Tree`) if the input is valid,
+/// or a list of `CompileMessage`s describing syntax errors encountered during parsing.
+///
+/// # Arguments
+///
+/// * `tokens` - A vector of `lexer::Token`s generated from the source code.
+///
+/// # Returns
+///
+/// * `Ok(ast::Tree)` if parsing succeeds without critical errors.
+/// * `Err(Vec<CompileMessage>)` if one or more syntax errors prevent tree construction.
+///
+/// # Example
+///
+/// ```
+/// let tokens = lexer::tokenize("fun main() {}");
+/// let result = parser::parse(&tokens);
+/// match result {
+///     Ok(tree) => println!("Parsed successfully!"),
+///     Err(errors) => eprintln!("Syntax errors: {:?}", errors),
+/// }
+/// ```
 pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::Tree> {
     let (tokens, errors) = convert_tok_to_kftok(tokens);
     if errors.len() > 0 {
@@ -77,6 +105,22 @@ pub fn parse(tokens: &Vec<lexer::Token>) -> ParsingResult<ast::Tree> {
     kfparser.parse_prog()
 }
 
+/// A recursive descent parser for the Kulfon programming language.
+///
+/// `KfParser` consumes a sequence of `KfToken`s (produced by the lexer)
+/// and builds an abstract syntax tree (AST) representing the program structure.
+///
+/// The parser is built using recursive descent techniques, with each method
+/// corresponding to a rule in the Kulfon grammar (e.g., expressions, function
+/// definitions, types, control flow, etc.).
+///
+/// Internally, the parser uses `ParseIter` to provide controlled access
+/// to the token stream with lookahead capabilities.
+///
+/// # Fields
+///
+/// - `iter`: Internal iterator over the input token stream.
+/// - `cap`: Estimated size of the produced abstract syntax tree.
 struct KfParser<'a> {
     iter: ParseIter<'a, KfToken<'a>>,
     // estimated AST tree size
@@ -84,13 +128,30 @@ struct KfParser<'a> {
 }
 
 impl<'a> KfParser<'a> {
+    /// Creates a new parser from a slice of tokens.
+    ///
+    /// # Arguments
+    ///
+    /// - `tokens`: A borrowed slice of `KfToken`s representing the input stream.
+    ///
+    /// # Returns
+    ///
+    /// A ready-to-use instance of `KfParser`.
     fn new(tokens: &'a [KfToken]) -> KfParser<'a> {
         KfParser {
             iter: ParseIter::new(tokens),
-            cap: tokens.len()
+            cap: tokens.len(),
         }
     }
 
+    /// Parses an entire Kulfon program.
+    ///
+    /// This is the top-level entry point. It repeatedly parses top-level
+    /// declarations (functions, structs, enums, etc.) into a `Tree` AST.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(Tree)` if parsing succeeded, or a `Vec<CompileMessage>` on failure.
     fn parse_prog(&mut self) -> ParsingResult<ast::Tree> {
         let mut tree = ast::Tree::new(self.cap);
         self.iter.next();
@@ -103,9 +164,11 @@ impl<'a> KfParser<'a> {
             TextPoint { line: 0, col: 0 },
         );
         tree.root = tree.push(root);
-            Ok(tree)
+        Ok(tree)
     }
 
+    /// Parses a single top-level statement (function, struct, etc.)
+    /// and inserts it into the AST `Tree`.
     fn parse_prog_statement(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         match &self.get_curr()?.kind {
             KfTokKind::KwFn => self.parse_fun(tree),
@@ -126,6 +189,7 @@ impl<'a> KfParser<'a> {
         }
     }
 
+    /// Parses a function declaration, including name, arguments, return type, and body.
     fn parse_fun(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwFn)?;
         let name = self.consume_name_literal()?;
@@ -156,6 +220,7 @@ impl<'a> KfParser<'a> {
         )))
     }
 
+    /// Parses a comma-separated list of function arguments and their types.
     fn parse_arg_list(&mut self, tree: &mut ast::Tree) -> ParsingResult<Vec<ast::VarDecl>> {
         let mut ret = Vec::new();
         if !self.check_current_tok(KfTokKind::SymParenthClose) {
@@ -187,6 +252,7 @@ impl<'a> KfParser<'a> {
         Ok(ret)
     }
 
+    /// Parses a single type declaration (e.g., `int`, `Vec<T>`).
     fn parse_type(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::TypeDecl> {
         // optimization - instead of calling recursively parse_type
         // for each '&', just loop over all '&' '& mut' and
@@ -271,7 +337,11 @@ impl<'a> KfParser<'a> {
         }
     }
 
-    fn parse_typename_with_generics(&mut self, tree: &mut ast::Tree) -> ParsingResult<(String, Vec<ast::TypeDecl>)> {
+    /// Parses a type identifier with optional generic parameters.
+    fn parse_typename_with_generics(
+        &mut self,
+        tree: &mut ast::Tree,
+    ) -> ParsingResult<(String, Vec<ast::TypeDecl>)> {
         let name = self.consume_name_literal()?;
         let mut generic_types = Vec::new();
         if self.match_current_tok(KfTokKind::OpLt) {
@@ -284,6 +354,7 @@ impl<'a> KfParser<'a> {
         Ok((name, generic_types))
     }
 
+    /// Parses a `struct` definition including its fields.
     fn parse_struct(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         self.consume_tok(KfTokKind::KwStruct)?;
         let at = self.get_curr()?.at;
@@ -301,6 +372,7 @@ impl<'a> KfParser<'a> {
         )))
     }
 
+    /// Parses a list of field declarations inside a struct.
     fn parse_struct_fields(&mut self, tree: &mut ast::Tree) -> ParsingResult<Vec<ast::VarDecl>> {
         let mut ret = Vec::new();
         while self.get_curr()?.kind != KfTokKind::SymCurlyClose {
@@ -313,6 +385,7 @@ impl<'a> KfParser<'a> {
         Ok(ret)
     }
 
+    /// Parses an `enum` declaration and its variants.
     fn parse_enum(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         self.consume_tok(KfTokKind::KwEnum)?;
         let at = self.get_curr()?.at;
@@ -330,7 +403,11 @@ impl<'a> KfParser<'a> {
         )))
     }
 
-    fn parse_enum_fields(&mut self, tree: &mut ast::Tree) -> ParsingResult<Vec<(String, Option<ast::TypeDecl>)>> {
+    /// Parses individual enum variants and optional types.
+    fn parse_enum_fields(
+        &mut self,
+        tree: &mut ast::Tree,
+    ) -> ParsingResult<Vec<(String, Option<ast::TypeDecl>)>> {
         let mut ret = Vec::new();
         while self.get_curr()?.kind != KfTokKind::SymCurlyClose {
             let name = self.consume_name_literal()?;
@@ -347,6 +424,7 @@ impl<'a> KfParser<'a> {
         Ok(ret)
     }
 
+    /// Parses an `impl` block for a type or trait.
     fn parse_impl(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         self.consume_tok(KfTokKind::KwImpl)?;
         let at = self.get_curr()?.at;
@@ -363,6 +441,7 @@ impl<'a> KfParser<'a> {
         )))
     }
 
+    /// Parses a block of statements (scope), typically within functions or control flow.
     fn parse_scope(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::SymCurlyOpen)?;
         let mut scope = Vec::new();
@@ -398,10 +477,12 @@ impl<'a> KfParser<'a> {
         Ok(tree.push(ast::Node::new(ast::Ntype::Scope(scope), at)))
     }
 
+    /// Parses any valid expression.
     fn parse_expression(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         Ok(self.parse_equality(tree)?)
     }
 
+    /// Parses equality expressions (e.g., `==`, `!=`).
     fn parse_equality(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let mut expr = self.parse_comparison(tree)?;
         loop {
@@ -420,6 +501,7 @@ impl<'a> KfParser<'a> {
         Ok(expr)
     }
 
+    /// Parses comparison expressions (e.g., `<`, `<=`, `>`).
     fn parse_comparison(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let mut expr = self.parse_term(tree)?;
         loop {
@@ -443,6 +525,7 @@ impl<'a> KfParser<'a> {
         Ok(expr)
     }
 
+    /// Parses additive expressions (e.g., `+`, `-`).
     fn parse_term(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let mut expr = self.parse_factor(tree)?;
         loop {
@@ -460,6 +543,7 @@ impl<'a> KfParser<'a> {
         Ok(expr)
     }
 
+    /// Parses multiplicative expressions (e.g., `*`, `/`).
     fn parse_factor(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let mut expr = self.parse_unary(tree)?;
         loop {
@@ -477,6 +561,7 @@ impl<'a> KfParser<'a> {
         Ok(expr)
     }
 
+    /// Parses unary expressions (e.g., `-a`, `!b`).
     fn parse_unary(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.get_curr()?.at;
         if self.match_current_tok(KfTokKind::OpBang) {
@@ -489,6 +574,7 @@ impl<'a> KfParser<'a> {
         self.parse_primary(tree)
     }
 
+    /// Parses atomic expressions like literals, variables, and grouped expressions.
     fn parse_primary(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let t = self.get_curr()?;
         let at = t.at;
@@ -514,6 +600,7 @@ impl<'a> KfParser<'a> {
         Err(vec![comp_msg::error_invalid_primary_expression(at)])
     }
 
+    /// Parses a function call expression, assuming the base expression is already parsed.
     fn parse_fn_call(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let fn_name = self.consume_name_literal()?;
         let at = self.consume_tok(KfTokKind::SymParenthOpen)?;
@@ -522,7 +609,8 @@ impl<'a> KfParser<'a> {
         return Ok(tree.push(ast::Node::new(ast::Ntype::FnCall(fn_name, args), at)));
     }
 
-    fn parse_expr_list(&mut self, tree: &mut ast::Tree ) -> ParsingResult<Vec<ast::NodeRef>> {
+    /// Parses a comma-separated list of expressions (e.g., function call arguments).
+    fn parse_expr_list(&mut self, tree: &mut ast::Tree) -> ParsingResult<Vec<ast::NodeRef>> {
         let mut ret = Vec::new();
         // expression list can be empty
         if !self.check_current_tok(KfTokKind::SymParenthClose) {
@@ -540,6 +628,7 @@ impl<'a> KfParser<'a> {
         Ok(ret)
     }
 
+    /// Parses a general control flow expression (`if`, `for`, `while`, etc.).
     fn parse_ctrl_flow(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         match self.get_curr()?.kind {
             KfTokKind::KwIf => self.parse_if(tree),
@@ -552,6 +641,7 @@ impl<'a> KfParser<'a> {
         }
     }
 
+    /// Parses an `if` conditional statement.
     fn parse_if(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwIf)?;
         let cond = self.parse_expression(tree)?;
@@ -580,6 +670,7 @@ impl<'a> KfParser<'a> {
         )))
     }
 
+    /// Parses a `for` loop expression.
     fn parse_for(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwFor)?;
         let var_pattern = self.consume_name_literal()?;
@@ -596,6 +687,7 @@ impl<'a> KfParser<'a> {
         )))
     }
 
+    /// Parses a `while` loop expression.
     fn parse_while(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwWhile)?;
         let cond = self.parse_expression(tree)?;
@@ -606,12 +698,14 @@ impl<'a> KfParser<'a> {
         )))
     }
 
+    /// Parses an infinite `loop` expression.
     fn parse_loop(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwLoop)?;
         let body = self.parse_scope(tree)?;
         Ok(tree.push(ast::Node::new(ast::Ntype::Loop(ast::Loop { body }), at)))
     }
 
+    /// Parses a variable declaration (immutable or mutable).
     fn parse_var(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         if self.check_tok_sequence(&[KfTokKind::KwLet, KfTokKind::KwMut]) {
             self.parse_mut_var(tree)
@@ -620,6 +714,7 @@ impl<'a> KfParser<'a> {
         }
     }
 
+    /// Parses an immutable (`const`) variable declaration.
     fn parse_const_var(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwLet)?;
         let name = self.consume_name_literal()?;
@@ -646,6 +741,7 @@ impl<'a> KfParser<'a> {
         )))
     }
 
+    /// Parses a mutable (`mut`) variable declaration.
     fn parse_mut_var(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwLet)?;
         self.consume_tok(KfTokKind::KwMut)?;
@@ -672,6 +768,7 @@ impl<'a> KfParser<'a> {
         )))
     }
 
+    /// Parses an assignment expression (`a = b`).
     fn parse_assign(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let name = self.consume_name_literal()?;
         let at = self.consume_tok(KfTokKind::OpAssign)?;
@@ -679,7 +776,16 @@ impl<'a> KfParser<'a> {
         self.consume_tok(KfTokKind::SymSemi)?;
         Ok(tree.push(ast::Node::new(ast::Ntype::Assign(name, expr), at)))
     }
-    /// Returns current token or emits eof error
+
+    /// Returns a reference to the current token without advancing the parser.
+    ///
+    /// This inspects the current token (i.e., the most recently returned one via `next`)
+    /// and returns it as an `Ok`. If the iterator has not started or has reached the end,
+    /// this returns an end-of-file (`EOF`) parsing error.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ParsingErrs` containing an `EOF` error if no token is available.
     fn get_curr(&self) -> ParsingResult<&'a KfToken> {
         match self.iter.peek() {
             Some(t) => Ok(t),
@@ -687,9 +793,22 @@ impl<'a> KfParser<'a> {
         }
     }
 
-    /// Moves current token to the next position only if
-    /// current token matches provided `kind`. Otherwise
-    /// an error is reported.
+    /// Consumes the current token if it matches the expected kind.
+    ///
+    /// If the current token matches the provided [`KfTokKind`], it advances the parser
+    /// and returns the token's source position (`TextPoint`). If the kind does not match,
+    /// a detailed `UnexpectedToken` error is returned. If there is no current token,
+    /// an `EOF` error is returned instead.
+    ///
+    /// # Arguments
+    ///
+    /// * `kind` — The expected token kind.
+    ///
+    /// # Errors
+    ///
+    /// Returns:
+    /// - `UnexpectedToken` error if the current token kind doesn't match.
+    /// - `EOF` error if no token is available.
     fn consume_tok(&mut self, kind: KfTokKind) -> ParsingResult<TextPoint> {
         let t = self.iter.peek();
         match t {
@@ -705,9 +824,15 @@ impl<'a> KfParser<'a> {
             None => return Err(error_eof()),
         }
     }
-    /// Check if the current token is equal to `kind`
-    /// If so, consume it and return true.
-    /// Otherwise return false.
+
+    /// Checks if the current token matches the expected kind and consumes it if it does.
+    ///
+    /// This is a convenience method for optional tokens (e.g., semicolons or delimiters).
+    /// It does **not** produce an error if the token doesn't match — it simply returns `false`.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the current token matched and was consumed; `false` otherwise.
     fn match_current_tok(&mut self, kind: KfTokKind) -> bool {
         if self.check_current_tok(kind) {
             self.iter.next();
@@ -716,7 +841,14 @@ impl<'a> KfParser<'a> {
         return false;
     }
 
-    /// Check if the current token is equal to `kind`
+    /// Checks if the current token matches the expected kind without consuming it.
+    ///
+    /// This is a lookahead helper that allows you to inspect the token stream
+    /// without modifying the parser state.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the current token exists and matches the given kind; `false` otherwise.
     fn check_current_tok(&self, kind: KfTokKind) -> bool {
         let t = self.iter.peek();
         if t.is_some() && t.unwrap().kind == kind {
@@ -725,6 +857,19 @@ impl<'a> KfParser<'a> {
         return false;
     }
 
+    /// Checks whether the upcoming token sequence matches a given sequence of kinds.
+    ///
+    /// Performs a multi-token lookahead and verifies that the sequence starting from
+    /// the current position matches the provided list of [`KfTokKind`]s. Does not
+    /// advance the parser state.
+    ///
+    /// # Arguments
+    ///
+    /// * `kinds` — A slice of expected token kinds to match.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the token stream matches the expected sequence exactly; `false` otherwise.
     fn check_tok_sequence(&self, kinds: &[KfTokKind]) -> bool {
         for (i, kind) in kinds.iter().enumerate() {
             let t = self.iter.lookahead(i);
@@ -739,10 +884,20 @@ impl<'a> KfParser<'a> {
         true
     }
 
-    /// Returns `text` of current token and moves
-    /// iterator to the next position only if
-    /// current token is literal.
-    /// Otherwise an error is reported.
+    /// Consumes the current token if it's a `Literal` and returns its text content.
+    ///
+    /// This is typically used to consume identifiers or literal strings.
+    /// If the current token is not a `Literal`, a `ExpectedLiteral` error is returned.
+    ///
+    /// # Returns
+    ///
+    /// A `String` containing the literal's text content.
+    ///
+    /// # Errors
+    ///
+    /// Returns:
+    /// - `ExpectedLiteral` if the current token is not a literal.
+    /// - `EOF` if no token is available.
     fn consume_name_literal(&mut self) -> ParsingResult<String> {
         let t = self.iter.peek();
         match t {
