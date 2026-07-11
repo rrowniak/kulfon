@@ -574,7 +574,14 @@ impl<'a> KfParser<'a> {
             let expr = self.parse_unary(tree)?;
             return Ok(tree.push(ast::Node::new(ast::Ntype::UMinus(expr), at)));
         }
-        self.parse_primary(tree)
+        let mut expr = self.parse_primary(tree)?;
+        // postfix field access: expr.field
+        while self.check_current_tok(KfTokKind::SymDot) {
+            let dot_at = self.consume_tok(KfTokKind::SymDot)?;
+            let field_name = self.consume_name_literal()?;
+            expr = tree.push(ast::Node::new(ast::Ntype::FieldAccess(expr, field_name), dot_at));
+        }
+        Ok(expr)
     }
 
     /// Parses atomic expressions like literals, variables, and grouped expressions.

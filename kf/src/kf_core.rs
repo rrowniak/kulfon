@@ -436,6 +436,37 @@ fn eval_types(
                 Some(EvaluatedValue::String(format!("{}::{}", type_name, variant))),
             );
         }
+        ast::Ntype::FieldAccess(ref base, ref field_name) => {
+            eval_types(tree, *base, ctx)?;
+            let base_type = get_side_node(*base, ctx).eval_type.eval_type.clone();
+            match base_type {
+                EvaluatedType::Struct(ref struct_name) => {
+                    if let Some(decl) = ctx.glob_structs.get(struct_name) {
+                        if let Some((_, field_type)) = decl.fields.iter().find(|(n, _)| n == field_name) {
+                            set_type(
+                                nref,
+                                ctx,
+                                KfType::from_literal(field_type.clone()),
+                                None,
+                            );
+                        } else {
+                            return Err(vec![comp_msg::error_invalid_primary_expression(
+                                tree.get(nref).at,
+                            )]);
+                        }
+                    } else {
+                        return Err(vec![comp_msg::error_invalid_primary_expression(
+                            tree.get(nref).at,
+                        )]);
+                    }
+                }
+                _ => {
+                    return Err(vec![comp_msg::error_invalid_primary_expression(
+                        tree.get(nref).at,
+                    )]);
+                }
+            }
+        }
         ast::Ntype::VarDef(ref vardef) => {
             calc_type_for_var_def(tree, nref, vardef, ctx)?;
         }
@@ -1061,6 +1092,10 @@ fn set_type_all_way_down(
                 // we don't want to change evaluated type for e.g. function parameters
                 return Ok(false);
             }
+            if let ast::Ntype::FieldAccess(_, _) = n.val {
+                // field access type is determined by the struct definition, not by context
+                return Ok(false);
+            }
             if let ast::Ntype::Literal(ref l) = n.val {
                 // that can be a variable, if so we have to update the cache
                 ctx.update_var_type(&l, t.clone());
@@ -1267,6 +1302,9 @@ fn walkthrough_generic(
             if let Some(expr) = payload {
                 walkthrough_generic(tree, *expr, ctx, visitor)?;
             }
+        }
+        ast::Ntype::FieldAccess(base, _) => {
+            walkthrough_generic(tree, *base, ctx, visitor)?;
         }
     }
     Ok(())

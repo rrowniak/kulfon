@@ -124,6 +124,10 @@ impl<'a> CGen<'a> {
             ast::Ntype::EnumInit(type_name, variant, payload) => {
                 self.transform_enum_init(tree, type_name, variant, *payload, indent)
             }
+            ast::Ntype::FieldAccess(base, field_name) => {
+                let base_s = self.process_ast_node(tree, *base, 0)?;
+                Ok(format!("{}.{}", base_s, field_name))
+            }
             ast::Ntype::Eq(a, b) => Ok(format!(
                 "{}{} == {}",
                 self.indent_str(indent),
