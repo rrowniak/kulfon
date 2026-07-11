@@ -339,6 +339,8 @@ pub enum Ntype {
     FnDef(Fun),
     // === Expressions ===
     FnCall(String, NodeRefs),
+    StructInit(String, Vec<(String, NodeRef)>),
+    EnumInit(String, String, Option<NodeRef>),
     VarDef(VarDef),
     // === Terminals ===
     String(String),

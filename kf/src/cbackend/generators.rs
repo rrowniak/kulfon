@@ -94,8 +94,15 @@ pub fn generate_type(kf_type: EvaluatedType, ctx: &mut CGenCtx) -> Option<&'stat
         EvaluatedType::ToBeInferred => None,
         EvaluatedType::FloatingNum => None,
         EvaluatedType::Integer => None,
-        EvaluatedType::Struct => None,
-        EvaluatedType::Enum => None,
+        EvaluatedType::Struct(ref name) => Some({
+            let s = format!("struct {name}");
+            Box::leak(s.into_boxed_str())
+        }),
+        EvaluatedType::Enum(ref name) => Some({
+            let prefix = if ctx.tagged_enums.contains(name.as_str()) { "struct" } else { "enum" };
+            let s = format!("{prefix} {name}");
+            Box::leak(s.into_boxed_str())
+        }),
     }
 }
 
@@ -183,7 +190,7 @@ fn convert_args_to_c_format(
     };
 
     if endline {
-        literal_s += "\n";
+        literal_s += "\\n";
     }
 
     for (arg_s, t, _) in args.iter().skip(1) {
@@ -235,10 +242,62 @@ fn convert_args_to_c_format(
             EvaluatedType::FloatingNum | EvaluatedType::Integer => {
                 panic!("ToBeInferred fl & num cannot be printed!")
             }
-            EvaluatedType::Struct => todo!(),
-            EvaluatedType::Enum => todo!(),
+            EvaluatedType::Struct(_) => {
+                literal_s = literal_s.replacen("{}", "%s", 1);
+                format!("\"<struct>\"")
+            }
+            EvaluatedType::Enum(_) => {
+                literal_s = literal_s.replacen("{}", "%s", 1);
+                format!("\"<enum>\"")
+            }
         });
     }
     ret.insert(0, format!("\"{literal_s}\""));
     ret.join(", ")
+}
+
+pub fn gen_struct_def(name: &str, fields: &[(String, EvaluatedType)], ctx: &mut CGenCtx) -> String {
+    let mut body = String::new();
+    for (fname, ftype) in fields {
+        if let Some(c_type) = generate_type(ftype.clone(), ctx) {
+            body += &format!("    {c_type} {fname};\n");
+        }
+    }
+    format!("struct {name} {{\n{body}}};\n")
+}
+
+pub fn gen_enum_def(name: &str, variants: &[(String, Option<EvaluatedType>)], ctx: &mut CGenCtx) -> String {
+    let has_payload = variants.iter().any(|(_, p)| p.is_some());
+    if has_payload {
+        gen_tagged_union_def(name, variants, ctx)
+    } else {
+        gen_simple_enum_def(name, variants)
+    }
+}
+
+fn gen_simple_enum_def(name: &str, variants: &[(String, Option<EvaluatedType>)]) -> String {
+    let variant_strs: Vec<String> = variants
+        .iter()
+        .map(|(vname, _)| format!("{name}_{vname}"))
+        .collect();
+    let variants_s = variant_strs.join(", ");
+    format!("enum {name} {{ {variants_s} }};\n")
+}
+
+fn gen_tagged_union_def(name: &str, variants: &[(String, Option<EvaluatedType>)], ctx: &mut CGenCtx) -> String {
+    let mut tag_variants = Vec::new();
+    let mut union_fields = Vec::new();
+    for (vname, payload) in variants {
+        tag_variants.push(format!("    {name}_{vname}"));
+        if let Some(ptype) = payload {
+            if let Some(c_type) = generate_type(ptype.clone(), ctx) {
+                union_fields.push(format!("        {c_type} {vname};"));
+            }
+        }
+    }
+    let tag_s = tag_variants.join(",\n");
+    let union_s = union_fields.join("\n");
+    format!(
+        "enum {name}_tag {{\n{tag_s}\n}};\n\nstruct {name} {{\n    enum {name}_tag tag;\n    union {{\n{union_s}\n    }} payload;\n}};\n"
+    )
 }

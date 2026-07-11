@@ -21,14 +21,16 @@ pub struct CGenCtx {
     pub stdlibs: HashSet<&'static str>,
     pub cstd_calls: HashSet<String>,
     pub bool_in_use: bool,
+    pub tagged_enums: HashSet<String>,
 }
 
 impl CGenCtx {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             stdlibs: HashSet::new(),
             cstd_calls: HashSet::new(),
             bool_in_use: false,
+            tagged_enums: HashSet::new(),
         }
     }
 
@@ -80,8 +82,26 @@ impl<'a> CGen<'a> {
     }
 
     fn gen(&mut self) -> ResultC {
+        // populate tagged_enums lookup
+        for (name, decl) in &self.mid.ctx.glob_enums {
+            if decl.variants.iter().any(|(_, p)| p.is_some()) {
+                self.ctx.tagged_enums.insert(name.clone());
+            }
+        }
         let code = self.process_ast_node(&self.mid.syntree, self.mid.syntree.root, 0)?;
+        // generate struct/enum defs first to collect stdlib requirements
+        let mut struct_defs = String::new();
+        for (name, decl) in &self.mid.ctx.glob_structs {
+            struct_defs += &generators::gen_struct_def(name, &decl.fields, &mut self.ctx);
+        }
+        let mut enum_defs = String::new();
+        for (name, decl) in &self.mid.ctx.glob_enums {
+            enum_defs += &generators::gen_enum_def(name, &decl.variants, &mut self.ctx);
+        }
+        // generate includes after struct/enum processing (they may add stdlib requirements)
         let mut ret = self.ctx.generate_context_code();
+        ret += &struct_defs;
+        ret += &enum_defs;
         ret += code.as_str();
         Ok(ret)
     }
@@ -97,6 +117,12 @@ impl<'a> CGen<'a> {
             ast::Ntype::FnDef(fn_def) => self.transform_fn(tree, &fn_def, indent),
             ast::Ntype::FnCall(fn_name, fn_args) => {
                 self.transform_fn_call(tree, &fn_name, &fn_args, indent)
+            }
+            ast::Ntype::StructInit(name, fields) => {
+                self.transform_struct_init(tree, name, fields, indent)
+            }
+            ast::Ntype::EnumInit(type_name, variant, payload) => {
+                self.transform_enum_init(tree, type_name, variant, *payload, indent)
             }
             ast::Ntype::Eq(a, b) => Ok(format!(
                 "{}{} == {}",
@@ -170,9 +196,9 @@ impl<'a> CGen<'a> {
             )),
             ast::Ntype::Break => Ok(format!("{}break;", self.indent_str(indent))),
             ast::Ntype::Continue => Ok(format!("{}continue;", self.indent_str(indent))),
-            ast::Ntype::Struct(_) => unimplemented!(),
-            ast::Ntype::Enum(_) => unimplemented!(),
-            ast::Ntype::Impl(_) => unimplemented!(),
+            ast::Ntype::Struct(_) => Ok("".into()),
+            ast::Ntype::Enum(_) => Ok("".into()),
+            ast::Ntype::Impl(_) => Ok("".into()),
             ast::Ntype::False => Ok(generators::gen_bool_var(false, &mut self.ctx).into()),
             ast::Ntype::True => Ok(generators::gen_bool_var(true, &mut self.ctx).into()),
             ast::Ntype::If(if_) => self.transform_if(tree, &if_, indent),
@@ -273,6 +299,48 @@ impl<'a> CGen<'a> {
         let fn_call_s = generators::gen_fn_call(name, &args_v, &mut self.ctx);
         let statement = format!("{indent_s}{fn_call_s};");
         Ok(statement)
+    }
+
+    fn transform_struct_init(
+        &mut self,
+        tree: &ast::Tree,
+        _name: &str,
+        fields: &Vec<(String, ast::NodeRef)>,
+        indent: usize,
+    ) -> ResultC {
+        let indent_s = self.indent_str(indent);
+        let mut field_strs = Vec::new();
+        for (_fname, expr) in fields.iter() {
+            let val = self.process_ast_node(tree, *expr, 0)?;
+            field_strs.push(val);
+        }
+        let fields_s = field_strs.join(", ");
+        Ok(format!("{indent_s}{{{fields_s}}}"))
+    }
+
+    fn transform_enum_init(
+        &mut self,
+        tree: &ast::Tree,
+        type_name: &str,
+        variant: &str,
+        payload: Option<ast::NodeRef>,
+        indent: usize,
+    ) -> ResultC {
+        let indent_s = self.indent_str(indent);
+        if let Some(expr) = payload {
+            let val = self.process_ast_node(tree, expr, 0)?;
+            // check if this enum has payloads (tagged union) or not
+            let is_tagged = self.mid.ctx.glob_enums.get(type_name)
+                .map(|decl| decl.variants.iter().any(|(_, p)| p.is_some()))
+                .unwrap_or(false);
+            if is_tagged {
+                Ok(format!("{indent_s}{{ {type_name}_{variant}, {{ {val} }} }}"))
+            } else {
+                Ok(format!("{indent_s}{type_name}_{variant}"))
+            }
+        } else {
+            Ok(format!("{indent_s}{type_name}_{variant}"))
+        }
     }
 
     fn transform_if(&mut self, tree: &ast::Tree, if_: &ast::If, indent: usize) -> ResultC {

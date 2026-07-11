@@ -56,9 +56,23 @@ pub struct FunDeclaration {
     ret: ast::TypeDecl,
 }
 
+pub struct StructDecl {
+    #[allow(dead_code)]
+    pub name: String,
+    pub fields: Vec<(String, EvaluatedType)>,
+}
+
+pub struct EnumDecl {
+    #[allow(dead_code)]
+    pub name: String,
+    pub variants: Vec<(String, Option<EvaluatedType>)>,
+}
+
 pub struct Context {
     pub side_nodes: Vec<SideNode>,
     pub glob_functs: HashMap<String, FunDeclaration>,
+    pub glob_structs: HashMap<String, StructDecl>,
+    pub glob_enums: HashMap<String, EnumDecl>,
     /// first position is a global scope with global variables and consts
     pub temp_scope: Vec<ScopeLog>,
 }
@@ -166,6 +180,8 @@ impl InterRepr {
         let mut ctx = Context {
             side_nodes: Vec::with_capacity(syntree.flat.len()),
             glob_functs: HashMap::new(),
+            glob_structs: HashMap::new(),
+            glob_enums: HashMap::new(),
             // add a global scope
             temp_scope: Vec::new(),
         };
@@ -222,6 +238,45 @@ fn collect_glob_functions(
                 // collision - this function already defined
                 errors.push(comp_msg::error_fn_name_in_use(syntree.get(nref).at));
             }
+        }
+        ast::Ntype::Struct(s) => {
+            let fields: Vec<(String, EvaluatedType)> = s
+                .members
+                .iter()
+                .filter_map(|m| {
+                    m.type_dec
+                        .typename()
+                        .and_then(|t| EvaluatedType::from_str(&t))
+                        .map(|et| (m.name.clone(), et))
+                })
+                .collect();
+            ctx.glob_structs.insert(
+                s.name.clone(),
+                StructDecl {
+                    name: s.name.clone(),
+                    fields,
+                },
+            );
+        }
+        ast::Ntype::Enum(e) => {
+            let variants: Vec<(String, Option<EvaluatedType>)> = e
+                .enums
+                .iter()
+                .map(|(name, type_decl)| {
+                    let payload = type_decl
+                        .as_ref()
+                        .and_then(|td| td.typename())
+                        .and_then(|t| EvaluatedType::from_str(&t));
+                    (name.clone(), payload)
+                })
+                .collect();
+            ctx.glob_enums.insert(
+                e.name.clone(),
+                EnumDecl {
+                    name: e.name.clone(),
+                    variants,
+                },
+            );
         }
         _ => {}
     }
@@ -325,9 +380,9 @@ fn eval_types(
             set_type(nref, ctx, KfType::from_literal(EvaluatedType::Never), None)
         }
         // higher level structures
-        ast::Ntype::Struct(_) => unimplemented!(),
-        ast::Ntype::Enum(_) => unimplemented!(),
-        ast::Ntype::Impl(_) => unimplemented!(),
+        ast::Ntype::Struct(_) => set_type_void(nref, ctx),
+        ast::Ntype::Enum(_) => set_type_void(nref, ctx),
+        ast::Ntype::Impl(_) => set_type_void(nref, ctx),
         ast::Ntype::Scope(ref a) => {
             ctx.scope_push(true);
             for node in a.iter() {
@@ -358,6 +413,28 @@ fn eval_types(
         }
         ast::Ntype::FnCall(ref name, ref args) => {
             calc_type_for_fn_call(tree, nref, &name, args, ctx)?;
+        }
+        ast::Ntype::StructInit(ref name, ref fields) => {
+            for (_, expr) in fields.iter() {
+                eval_types(tree, *expr, ctx)?;
+            }
+            set_type(
+                nref,
+                ctx,
+                KfType::from_literal(EvaluatedType::Struct(name.clone())),
+                None,
+            );
+        }
+        ast::Ntype::EnumInit(ref type_name, ref variant, ref payload) => {
+            if let Some(expr) = payload {
+                eval_types(tree, *expr, ctx)?;
+            }
+            set_type(
+                nref,
+                ctx,
+                KfType::from_literal(EvaluatedType::Enum(type_name.clone())),
+                Some(EvaluatedValue::String(format!("{}::{}", type_name, variant))),
+            );
         }
         ast::Ntype::VarDef(ref vardef) => {
             calc_type_for_var_def(tree, nref, vardef, ctx)?;
@@ -778,8 +855,15 @@ fn calc_type_for_var_def(
             // there is no expression, just a variable declaration
         }
     }
-    // whole expression evaluates to void
-    set_type_void(parent, ctx);
+    // the variable definition evaluates to the expression type (or void if no expression)
+    match &kf_t.eval_type {
+        EvaluatedType::ToBeInferred => {
+            set_type_void(parent, ctx);
+        }
+        t => {
+            set_type(parent, ctx, KfType { mutable: Some(vardef.mutable), eval_type: t.clone() }, None);
+        }
+    }
     ctx.scope_push_var(
         vardef.name.clone(),
         VarDefinition {
@@ -1174,6 +1258,16 @@ fn walkthrough_generic(
         ast::Ntype::Char(_) => {}
         ast::Ntype::True => {}
         ast::Ntype::False => {}
+        ast::Ntype::StructInit(_, ref fields) => {
+            for (_, expr) in fields.iter() {
+                walkthrough_generic(tree, *expr, ctx, visitor)?;
+            }
+        }
+        ast::Ntype::EnumInit(_, _, ref payload) => {
+            if let Some(expr) = payload {
+                walkthrough_generic(tree, *expr, ctx, visitor)?;
+            }
+        }
     }
     Ok(())
 }

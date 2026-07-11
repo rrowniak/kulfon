@@ -34,10 +34,8 @@ pub enum EvaluatedType {
     FloatingNum,
     Integer,
     // Complex types
-    #[allow(dead_code)]
-    Struct,
-    #[allow(dead_code)]
-    Enum,
+    Struct(String),
+    Enum(String),
 }
 
 impl EvaluatedType {
@@ -121,8 +119,8 @@ impl EvaluatedType {
             Self::ToBeInferred => false,
             Self::FloatingNum => false,
             Self::Integer => false,
-            Self::Struct => true,
-            Self::Enum => true,
+            Self::Struct(_) => true,
+            Self::Enum(_) => true,
         }
     }
 }
