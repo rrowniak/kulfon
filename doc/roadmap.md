@@ -1,103 +1,88 @@
 # Development plan for Kulfon project
 
-## Highest priority
+## Current status
 
-### Finishing language parsing
-- [done] structs (struct + impl)
-- [done] enums (enum)
-- [done] arrays & slices ([])
-- [done] basic format string parsing
-- [done] variable length function parsing
-- [done] type parsing (literal names, references, arrays, slices, generic types, function pointers)
-- parsing struct and enum initialization
-- parsing array initialization
+Kulfon is in early development. The compiler can parse, type-check, and generate C89 code for a subset of the language. All generated code is tested with `gcc -std=c89 -pedantic-errors -Werror`.
+
+## Implemented features
+
+### Parsing
+- [done] Function definitions with arguments and return types
+- [done] Variable definitions (`let`, `let mut`) with optional type annotations
+- [done] Type names (`i32`, `bool`, `str`, etc.)
+- [done] Expressions (binary ops, unary ops, parentheses)
+- [done] Control flow (`if`/`else if`/`else`, `while`, `loop` with `break`, `for`)
+- [done] Function calls
+- [done] Struct definitions
+- [done] Enum definitions (simple and with payloads)
+- [done] Struct initialization (`Point { x: 1, y: 2 }`)
+- [done] Enum initialization (`Color :: Red`, `Result :: Ok(42)`)
+- [done] Field access (`p.x`)
+- [done] Boolean literals (`true`, `false`)
+- [done] String and character literals
+- [done] Numeric literals (integer, floating-point)
 
 ### Type system
-- [done] basic checking types
-- checking type conversion
-- [done] functions calls
-- [done] variable definitions and mutability checks
-- struct type checking
-- array type checking
-- enum type checking
-- references and slices
-- borrow checker, lifetime guard
-- move semantics 
+- [done] Basic type checking for expressions
+- [done] Type inference for variables
+- [done] Function call argument type checking
+- [done] Variable definition type checking
+- [done] Struct field type resolution
+- [done] Enum variant type resolution
+- [done] Field access type resolution
 
-### Other
-- [done] refactored compile errors handling
-- [done] predefined std functions like `print` and `println`
+### C code generation
+- [done] Function definitions
+- [done] Variable definitions (const/mutable)
+- [done] Control flow
+- [done] Binary and unary operators
+- [done] Function calls
+- [done] Struct definitions and initialization
+- [done] Enum definitions (simple and tagged unions)
+- [done] Field access
+- [done] Format strings (`print`/`println` with `{}` placeholders)
+- [done] Standard library includes (auto-detected)
 
-### C binding system CAPI-IN
-- importing primitive types and functions
-- pointers
-- importing enums and defines
-- importing structures
+### Testing
+- [done] Test framework (`tests/test_all.sh`)
+- [done] 7 automated tests covering all implemented features
+- [done] C89 strict compilation with `-Werror`
 
-## Next in the queue
+## Not yet implemented
 
-- struct, enum and function annotations (@annotation)
-- missing operators
-- parsing matching patterns
-- range struct (0..20 => Range{start:0, end:20})
+### Language features
+- [ ] References (`&`, `&mut`)
+- [ ] Arrays and slices
+- [ ] Pattern matching (`match` expressions)
+- [ ] Impl blocks and methods
+- [ ] Multiple return values / tuples
+- [ ] Range expressions (`0..10`)
+- [ ] String concatenation and operations
+- [ ] Type aliases
+- [ ] Generics
+- [ ] Traits / interfaces
+- [ ] Move semantics
+- [ ] Borrow checker
+- [ ] Closures
+- [ ] Error handling (`?` operator)
 
-### generics
-- parsing generics
-- type deducing & checking
+### Infrastructure
+- [ ] Multiple files and module system
+- [ ] Standard library (collections, I/O, utilities)
+- [ ] C API (importing/exporting C functions and types)
+- [ ] Better error messages with source context
+- [ ] Warnings and diagnostics
+- [ ] Optimization passes
 
-### traits aka interfaces
-- design the concept
-- implement support
-- dynamic traits/interfaces (vtable)
+### Nice to have
+- [ ] Package manager
+- [ ] Linter and formatter
+- [ ] Language server protocol (LSP)
+- [ ] Documentation generator
 
-### matching
-- implement matching system
-- C code generator
-
-### compiler API
-- enforce compile time
-- sizeof etc
-- suppress warnings
-- compile time flow control
-
-### heap allocation
-- concept
-- smart prts
-
-### types
-- struct deconstructing
-
-### STD
-- collections
-- io (files, sockets)
-- miscelanous (rand)
-- string utils
-- primitive types utils
-- advanced string parsing format
-
-### C binding system CAPI-OUT
-- exporting types and functions
-
-## Nice to have so far
-
-### STD
-- high level libraries
-    - net
-    - http server
-    - crypto
-
-### Kulfon project
-- multifile compilation
-- different targets
-
-### Kulfon package manager
-
-### Kulfon tools
-- linter
-- formatter
-
-# Memory issues to be solved
-- after free problem
-- memory leaks
-- out of bound access
-- NULL pointer deref
+## Memory safety goals
+- [ ] No dangling pointers (stack-based allocation)
+- [ ] No use-after-free
+- [ ] No memory leaks (for stack-allocated data)
+- [ ] No out-of-bounds access
+- [ ] No null pointer dereferences

@@ -1,137 +1,188 @@
-# Kulfon memory model
+# Kulfon types and memory model
 
-The Kulfon language supports both dynamic memory allocations (heap) and stack based memory allocation for local variables and function arguments. There is no automatic memory managent (e.g. garbage collector, runtime tracking variable lifetimes, etc).
+## Status
 
-## Plain old data (POD)
-Properties:
-- POD variables are allocated automatically on the stack
-- the _copy by value_ semantics is employed
-- POD variables are not moveable
-- POD variables have a single owner - the scope where they were defined
-- the ownership can't be transferred since move semantics is not supported by this type of variables
-- lifetime is valid within the scope
-- each variable has to be initialized. Access to initialized-only is enforced by the Kulfon compiler on compile time
+This document describes the type system and memory model. Items marked with `(planned)` are not yet implemented.
 
-# Kulfon built-in primitive types
-## Boolean
+## Memory model
 
-`bool` - might take only one of these: `true` or `false`.
+The Kulfon language currently supports stack-based memory allocation for local variables and function arguments.
 
-Example:
-```rust
-let mut enabled = false;
-// ....
-enabled = true;
+### Planned memory features
+- Dynamic memory allocation (heap)
+- Move semantics
+- Borrow checker and lifetime tracking
+- Smart pointers
 
-```
+## Primitive types (implemented)
 
-## Integer
+### Boolean
+`bool` — values: `true` or `false`
 
-`u8`, `u16`, `u32`, `u64`, `u128`, `i8`, `i16`, `i32`, `i64`, `i128`
+### Integers
+Signed: `i8`, `i16`, `i32`, `i64`
+Unsigned: `u8`, `u16`, `u32`, `u64`
 
-See C mapping chapter for more details.
-`u128` and `i128` are currently not supported.
+Note: `i128` and `u128` are not yet supported.
 
-## Machine-dependent integer types
-
+### Machine-dependent integers
 `usize`, `isize`
 
-## Floating-point
-
+### Floating-point
 `f32`, `f64`
 
-## Textual
+### Textual
+`char` — single character
+`rune` — Unicode code point (mapped to `i32`)
+`str` — string literal (mapped to `const char*` in C)
 
-`char`, `rune`
+## Complex types (implemented)
 
-`str`
-
-# Kulfon non-primitive types
-
-## Never type
-
-`__never` - this is a special type saying that program flow never get there. For example, consider the following function:
-```rust
-fn panic(msg: str) -> __never { ... }
-
+### Structs
+```kulfon
+struct Point { x: i32, y: i32 }
 ```
-Function `panic` prints a message and terminates the program execution. So, effectively it won't get to a point of returning any (possibly `void` in this case) value. For various reasons we need to highlight this fact.
 
-## Void type
+Properties:
+- Stack-allocated
+- Copy by value semantics
+- Fields accessed with dot notation (`p.x`)
 
-`void` - this is a special type indicating that no particular value is represented. 
+### Enums
+```kulfon
+// Simple enum
+enum Color { Red, Green, Blue }
 
-## Arrays
+// Enum with payloads
+enum Result { Ok(i32), Err(i32) }
+```
 
-`let array: [f32; 3] = [0.5, 0.8, 1.0];`
-`let array: [f32; _] = [0.5, 0.8, 1.0];`
+Properties:
+- Simple enums → C `enum` (all variants are unit variants)
+- Enums with payloads → C tagged union (struct with tag + union)
+- Variants accessed with `::` syntax (`Color :: Red`)
 
-## Slices
+## Planned types
 
-`let slice: &[i32] = [0..10];`
+### References
+```kulfon
+let r: &i32 = &x;      // immutable reference
+let r: &mut i32 = &mut x;  // mutable reference
+```
 
-## Structs
+### Arrays
+```kulfon
+let arr: [i32; 3] = [1, 2, 3];
+let first = arr[0];
+```
 
-```rust
+### Slices
+```kulfon
+let slice: &[i32] = &arr[0..2];
+```
+
+### Tuples
+```kulfon
+let pair: (i32, bool) = (42, true);
+let (x, y) = pair;
+```
+
+### Function pointers
+```kulfon
+let f: fn(i32, i32) -> i32 = add;
+```
+
+### Closures (planned)
+```kulfon
+let add_one = |x: i32| -> i32 { x + 1 };
+```
+
+## Type system
+
+### Type inference
+Kulfon infers types when not explicitly specified:
+```kulfon
+let x = 42;        // inferred as i32
+let y = 3.14;      // inferred as f64
+let s = "hello";   // inferred as str
+```
+
+### Explicit types
+Type annotations are optional but recommended for clarity:
+```kulfon
+let x: i32 = 42;
+let y: f64 = 3.14;
+```
+
+### Type checking
+- All variables must be initialized before use
+- Function arguments must match declared types
+- Return types must match declared types
+- No implicit type conversions
+
+## C type mapping
+
+| Kulfon | C type | Notes |
+|--------|--------|-------|
+| `bool` | `kf_boolean` | C enum type |
+| `i8` | `int8_t` | |
+| `i16` | `int16_t` | |
+| `i32` | `int32_t` | |
+| `i64` | `int64_t` | |
+| `u8` | `uint8_t` | |
+| `u16` | `uint16_t` | |
+| `u32` | `uint32_t` | |
+| `u64` | `uint64_t` | |
+| `usize` | `size_t` | |
+| `isize` | `ssize_t` | |
+| `f32` | `float` | |
+| `f64` | `double` | |
+| `char` | `char` | |
+| `rune` | `int32_t` | |
+| `str` | `const char*` | |
+
+Note: Kulfon targets C89 but uses `<stdint.h>` types which are C99. The compiler generates the necessary includes automatically. See [this discussion](https://stackoverflow.com/questions/62937049/stdint-h-in-ansi-c-c89) for details on using `stdint.h` with C89 compilers.
+
+## Struct C mapping
+
+```kulfon
+struct Point { x: i32, y: i32 }
+```
+→
+```c
 struct Point {
-    x: f32,
-    y: f32,
-}
-
+    int32_t x;
+    int32_t y;
+};
 ```
 
-## Enums
+## Enum C mapping
 
-```rust
-enum CollisionResult {
-    Collision(Point),
-    None,
-}
+### Simple enums
+```kulfon
+enum Color { Red, Green, Blue }
+```
+→
+```c
+enum Color { Color_Red, Color_Green, Color_Blue };
 ```
 
-## Unions
+### Enums with payloads
+```kulfon
+enum Result { Ok(i32), Err(i32) }
+```
+→
+```c
+enum Result_tag {
+    Result_Ok,
+    Result_Err
+};
 
-## Aliases
-
-`alias TempT = f32;`
-
-Type alias is just a different name for the same type. In the above example, the Kulfon compiler considers `TempT` and `f32` as the same types, that is, `f32` type.
-
-## Type derivation
-
-`type TempT = f32;`
-
-Type derivation creates a new type that has exactly the same properties as the original type.
-
-## Inferred types
-
-`let spins: Vec<_> = [0.5, -0.5, 0.5];`
-
-Symbol `_` means _deduce the type on yourself_.
-
-# C mapping
-
-This mapping suggests conformance with C99 while Kulfon promises to be compliant with C89. Depending on the environment, Kulfon might pregenerate these types if they're missing to be compliant with C89, or, you need to provide correct mapping in the platform configuration.
-
-[See here](https://stackoverflow.com/questions/62937049/stdint-h-in-ansi-c-c89) and [here](https://stackoverflow.com/questions/44590043/why-is-generic-keyword-supported-in-c99-or-c90-modes/44590122#44590122) for reference.
-
-
-| Kulfon type | C-type      | Comments |
-|-------------|-------------|----------|
-|`bool`       |`kf_boolean` |C-enum type|
-| `u8`        | `uint8_t`||
-|`u16`        | `uint16_t`||
-|`u32`        | `uint32_t`||
-|`u64`        | `uint64_t`||
-|`u128`       | |Not supported yet|
-|`i8`         | `int8_t`|| 
-|`i16`        | `int16_t`||
-|`i32`        | `int32_t`||
-|`i64`        | `int64_t`||
-|`i128`       | |Not supported yet|
-|`usize`      | `size_t`||
-|`isize`      | `ssize_t`||
-|`f32`        | `float` ||
-|`f64`        | `double` ||
-|`char`       | `char` ||
-|`rune`       | `int32_t` ||
+struct Result {
+    enum Result_tag tag;
+    union {
+        int32_t Ok;
+        int32_t Err;
+    } payload;
+};
+```

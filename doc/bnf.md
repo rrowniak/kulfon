@@ -53,13 +53,14 @@ parse_equality ::= parse_comparison (('!=' | '==') parse_comparison)*
 parse_comparison ::= parse_term (('>' | '>=' | '<' | '<=') parse_term)*
 parse_term ::= parse_factor (('-' | '+') parse_factor)*
 parse_factor ::= parse_unary (('/' | '*') parse_unary)*
-parse_unary ::= ('!' | '-') parse_unary | parse_primary
+parse_unary ::= ('!' | '-') parse_unary | parse_postfix
+parse_postfix ::= parse_primary ('.' IDENTIFIER)*
 parse_primary ::= parse_fn_call | NUMBER | STRING | CHAR | 'true' | 'false' | '(' parse_expression ')'
 ```
 
 ## Function call
 ```
-parse_fn_call ::= FN_NAME '(' parse_expr_list ')
+parse_fn_call ::= FN_NAME '(' parse_expr_list ')'
 parse_expr_list ::= E | (parse_expression) (',' parse_expression)*
 ```
 
@@ -81,8 +82,15 @@ parse_loop ::= 'loop' parse_scope
 ## Variable definition
 ```
 parse_var ::= parse_mut_var | parse_const_var
-parse_const_var ::= 'let' VAR_NAME (':' parse_type)? ('=' parse_expression)? ';'
-parse_mut_var ::= 'let' 'mut' VAR_NAME (':' parse_type)? ('=' parse_expression)? ';'
+parse_const_var ::= 'let' VAR_NAME (':' parse_type)? ('=' parse_init_expr)? ';'
+parse_mut_var ::= 'let' 'mut' VAR_NAME (':' parse_type)? ('=' parse_init_expr)? ';'
+
+parse_init_expr ::= parse_struct_init | parse_enum_init | parse_expression
+
+parse_struct_init ::= TYPE_LITERAL '{' parse_struct_field_values '}'
+parse_struct_field_values ::= (FIELD_NAME ':' parse_expression) (',' FIELD_NAME ':' parse_expression)*
+
+parse_enum_init ::= TYPE_LITERAL '::' ENUM_FIELD_NAME ('(' parse_expression ')')?
 ```
 
 ## Assignment

@@ -125,8 +125,10 @@ struct KfParser<'a> {
     iter: ParseIter<'a, KfToken<'a>>,
     // estimated AST tree size
     cap: usize,
-    // When false, `Literal {` is not parsed as struct init (e.g. in if/while conditions)
+    // When true, `Literal {` is parsed as struct init (only in variable definitions)
     allow_struct_init: bool,
+    // When true, `Literal ::` is parsed as enum init (only in variable definitions)
+    allow_enum_init: bool,
 }
 
 impl<'a> KfParser<'a> {
@@ -143,7 +145,8 @@ impl<'a> KfParser<'a> {
         KfParser {
             iter: ParseIter::new(tokens),
             cap: tokens.len(),
-            allow_struct_init: true,
+            allow_struct_init: false,
+            allow_enum_init: false,
         }
     }
 
@@ -598,7 +601,7 @@ impl<'a> KfParser<'a> {
             return self.parse_fn_call(tree);
         } else if self.allow_struct_init && self.check_tok_sequence(&[KfTokKind::Literal, KfTokKind::SymCurlyOpen]) {
             return self.parse_struct_init(tree);
-        } else if self.check_tok_sequence(&[KfTokKind::Literal, KfTokKind::SymScopeResolution]) {
+        } else if self.allow_enum_init && self.check_tok_sequence(&[KfTokKind::Literal, KfTokKind::SymScopeResolution]) {
             return self.parse_enum_init(tree);
         } else if self.match_current_tok(KfTokKind::LitChar) {
             return Ok(tree.push(ast::Node::new(ast::Ntype::Char(text), at)));
@@ -695,17 +698,13 @@ impl<'a> KfParser<'a> {
     /// Parses an `if` conditional statement.
     fn parse_if(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwIf)?;
-        self.allow_struct_init = false;
         let cond = self.parse_expression(tree)?;
-        self.allow_struct_init = true;
         let body = self.parse_scope(tree)?;
         let mut elif = Vec::new();
         while self.check_tok_sequence(&[KfTokKind::KwElse, KfTokKind::KwIf]) {
             self.consume_tok(KfTokKind::KwElse)?;
             self.consume_tok(KfTokKind::KwIf)?;
-            self.allow_struct_init = false;
             let cond = self.parse_expression(tree)?;
-            self.allow_struct_init = true;
             let body = self.parse_scope(tree)?;
             elif.push(ast::Elif { cond, body });
         }
@@ -745,9 +744,7 @@ impl<'a> KfParser<'a> {
     /// Parses a `while` loop expression.
     fn parse_while(&mut self, tree: &mut ast::Tree) -> ParsingResult<ast::NodeRef> {
         let at = self.consume_tok(KfTokKind::KwWhile)?;
-        self.allow_struct_init = false;
         let cond = self.parse_expression(tree)?;
-        self.allow_struct_init = true;
         let body = self.parse_scope(tree)?;
         Ok(tree.push(ast::Node::new(
             ast::Ntype::While(ast::While { cond, body }),
@@ -782,7 +779,12 @@ impl<'a> KfParser<'a> {
             None
         };
         let expr = if self.match_current_tok(KfTokKind::OpAssign) {
-            Some(self.parse_expression(tree)?)
+            self.allow_struct_init = true;
+            self.allow_enum_init = true;
+            let e = self.parse_expression(tree)?;
+            self.allow_struct_init = false;
+            self.allow_enum_init = false;
+            Some(e)
         } else {
             None
         };
@@ -809,7 +811,12 @@ impl<'a> KfParser<'a> {
             None
         };
         let expr = if self.match_current_tok(KfTokKind::OpAssign) {
-            Some(self.parse_expression(tree)?)
+            self.allow_struct_init = true;
+            self.allow_enum_init = true;
+            let e = self.parse_expression(tree)?;
+            self.allow_struct_init = false;
+            self.allow_enum_init = false;
+            Some(e)
         } else {
             None
         };
