@@ -34,7 +34,9 @@ pub enum EvaluatedType {
     FloatingNum,
     Integer,
     // Complex types
+    #[allow(dead_code)]
     Struct,
+    #[allow(dead_code)]
     Enum,
 }
 
@@ -165,11 +167,13 @@ pub enum EvaluatedValue {
     Integer(EvaluatedInt),
     Floating(EvaluatedFloat),
     Char(char),
+    #[allow(dead_code)]
     Rune(i32),
     String(String),
 }
 
 impl EvaluatedValue {
+    #[allow(dead_code)]
     pub fn try_to_i128(&self) -> Option<i128> {
         match self {
             Self::Integer(ev_int) => match ev_int.val {

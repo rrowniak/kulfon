@@ -146,6 +146,7 @@ impl KfTokKind {
         )
     }
 
+    #[allow(dead_code)]
     pub fn is_symbol(&self) -> bool {
         matches!(self,
             KfTokKind::SymCurlyOpen | 
@@ -168,6 +169,7 @@ impl KfTokKind {
         )
     }
 
+    #[allow(dead_code)]
     pub fn is_operator(&self) -> bool {
         matches!(self,
             KfTokKind::OpEq | 

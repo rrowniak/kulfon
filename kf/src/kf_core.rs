@@ -9,18 +9,28 @@ use crate::comp_msg::{self, CompileMsgCol, TextPoint};
 use crate::type_system::*;
 use std::collections::HashMap;
 
+/// Index to `SideNode` element from `Context::side_nodes`
 #[derive(Copy, Clone, Debug)]
 pub struct SideNodeRef(u32);
 
 impl SideNodeRef {
+    /// Converts `NodeRef` to `SideNodeRef`.
+    /// The assumption is that a flat structure of the AST
+    /// is compatible with the SideNode collection.
     pub fn from_node_ref(nref: ast::NodeRef) -> Self {
         Self(nref.as_usize() as u32)
     }
 }
 
+/// A structure that contains additional information in
+/// comparison to the AST::Node.
 #[derive(Debug, Clone, Default)]
 pub struct SideNode {
+    /// Evaluated type of the corresponding AST node.
     pub eval_type: KfType,
+    /// Evaluated value of the corresponding AST node.
+    /// Usually happens for expressions that can be
+    /// evaluated at the runtime
     pub eval_val: Option<EvaluatedValue>,
 }
 

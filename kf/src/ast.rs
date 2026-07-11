@@ -56,6 +56,7 @@ pub enum RefType {
 
 /// Represents the core structure of a type declaration.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum TypeKind {
     /// An array with a size expression (e.g., `[T; 3]`)
     Array(Box<TypeDecl>, Option<NodeRef>),
@@ -71,6 +72,7 @@ pub enum TypeKind {
 ///
 /// Used for variables, function signatures, and type annotations.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TypeDecl {
     /// Stack of reference modifiers (`&`, `&mut`)
     pub reference_stack: Vec<RefType>,
@@ -107,6 +109,7 @@ impl TypeDecl {
 
 /// Represents a variable declaration.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct VarDecl {
     /// Variable name.
     pub name: String,
@@ -138,6 +141,7 @@ pub struct If {
 
 /// For-loop construct with a pattern binding.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct For {
     /// Variable pattern (e.g., `i`, or tuple destructure).
     pub var_pattern: String,
@@ -178,6 +182,7 @@ pub struct VarDef {
 
 /// Definition of a struct.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Struct {
     /// Struct name.
     pub name: String,
@@ -189,6 +194,7 @@ pub struct Struct {
 
 /// Definition of an enum.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Enum {
     /// Enum name.
     pub name: String,
@@ -202,6 +208,7 @@ pub struct Enum {
 
 /// Implementation block for a type.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Impl {
     /// Name of the type being implemented.
     pub name: String,
@@ -325,6 +332,7 @@ pub enum Ntype {
     Continue,
     // === Declarations ===
     Struct(Struct),
+    #[allow(dead_code)]
     Enum(Enum),
     Impl(Impl),
     Scope(NodeRefs),

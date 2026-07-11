@@ -22,6 +22,7 @@ pub enum MessageKind {
 
 #[derive(Debug)]
 pub struct CompileMessage {
+    #[allow(dead_code)]
     pub kind: MessageKind,
     pub msg: String,
     pub details: String,
@@ -194,6 +195,7 @@ pub fn error_undeclared_var(at: TextPoint) -> CompileMessage {
     }
 }
 
+#[allow(dead_code)]
 pub fn error_condition_must_be_bool(
     at: TextPoint,
     expr: &str,

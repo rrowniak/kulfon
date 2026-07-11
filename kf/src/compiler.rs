@@ -11,30 +11,20 @@ use crate::lex_structs;
 use crate::lexer;
 use crate::parser;
 
-pub const BUILT_IN_STUFF: &str = r#"
-fn print(s: &str, ...) {}
-fn println(s: &str, ...) {}
-fn rand() -> i32 {}
-fn assert(cond: bool, s: &str, ...) {}
-fn panic(s: &str, ...) {}
-fn exit(code: i8) {}
-fn sleep(milisecs: i32) {}
-fn env(name: &str) -> str {}
-fn file_to_str(filename: &str) -> Result<str, Error> {}
-fn file_to_bytes(filename: &str) -> Result<Vec<u8>, Error> {}
-fn file_exists(filename: &str) -> bool {}
+/// This string contains built-in predefined functions and definitions
+/// that are part of the Kulfon language.
+pub const BUILT_IN_STUFF: &str = include_str!("builtin.kf");
 
-enum Result<R, E> {
-    Ok(R),
-    Err(E)
-}
-
-enum Option<R> {
-    Some(R),
-    None,
-}
-"#;
-
+/// Compiles a single Kulfon source code.
+///
+/// # Arguments
+///
+/// * `input` - The path to the Kulfon source code.
+/// * `output` - The path to the generated output C source file.
+///
+/// # Returns
+/// A `Result<(), String>`, `Ok(())` if everything fine, otherwise formatted error messages
+/// `Err(String)`.
 pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Result<(), String> {
     let kulfon_lang = lex_structs::Lang::new();
     // parse built-in stuff
@@ -83,6 +73,41 @@ pub fn compile_single(input: &std::path::Path, output: &std::path::Path) -> Resu
     Ok(())
 }
 
+/// Formats a list of compilation errors into a human-readable message suitable for terminal display.
+///
+/// This function takes the original source code and a collection of compiler messages,
+/// and produces a formatted string highlighting each error. The output typically includes:
+///
+/// - Line and column information
+/// - Code snippets with carets (`^`) marking the error locations
+/// - Error messages describing the issue
+///
+/// The formatted result is designed to help developers quickly locate and understand
+/// problems in their Kulfon source code.
+///
+/// # Arguments
+///
+/// * `code` - The original Kulfon source code as a string slice. Used to extract and display relevant lines.
+/// * `errors` - A collection of compilation messages returned during the parsing or analysis phase.
+///
+/// # Returns
+///
+/// A `String` containing a formatted diagnostic report that can be printed to a terminal or log.
+///
+/// # Example
+///
+/// ```rust
+/// let code = r#"let x = 5
+/// let y = x + "#;
+///
+/// let errors = parser::parse(code).unwrap_err();
+/// println!("{}", process_errors(code, &errors));
+/// ```
+///
+/// # See Also
+///
+/// - [`comp_msg::CompileMsgCol`] for the structure of the error collection.
+/// - [`TextPoint`] for line and column positioning metadata used in the formatting.
 fn process_errors(code: &str, errors: &comp_msg::CompileMsgCol) -> String {
     let lines = code.lines().collect::<Vec<&str>>();
     let mut err_log = String::new();

@@ -294,7 +294,7 @@ impl<'a> CGen<'a> {
         Ok(ret)
     }
 
-    fn transform_for(&mut self, tree: &ast::Tree, _for_: &ast::For, _indent: usize) -> ResultC {
+    fn transform_for(&mut self, _tree: &ast::Tree, _for_: &ast::For, _indent: usize) -> ResultC {
         todo!()
     }
 
