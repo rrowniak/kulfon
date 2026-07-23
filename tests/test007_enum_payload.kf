@@ -1,6 +1,10 @@
 //ok
 enum Result { Ok(i32), Err(i32) }
+enum Pair { First(i32), Second(i32) }
 fn main() {
     let r = Result :: Ok(42);
-    println("ok");
+    let e = Result :: Err(-1);
+    let p1 = Pair :: First(100);
+    let p2 = Pair :: Second(200);
+    print("ok");
 }

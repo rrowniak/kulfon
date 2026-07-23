@@ -90,7 +90,7 @@ pub fn generate_type(kf_type: EvaluatedType, ctx: &mut CGenCtx) -> Option<&'stat
             ctx.stdlibs.insert(C_STDINT_H);
             Some("int32_t")
         }
-        EvaluatedType::String => Some("str"),
+        EvaluatedType::String => Some("char*"),
         EvaluatedType::ToBeInferred => None,
         EvaluatedType::FloatingNum => None,
         EvaluatedType::Integer => None,
@@ -207,19 +207,25 @@ fn convert_args_to_c_format(
             }
             EvaluatedType::U8
             | EvaluatedType::U16
-            | EvaluatedType::U32
-            | EvaluatedType::U64
-            | EvaluatedType::USize => {
+            | EvaluatedType::U32 => {
                 literal_s = literal_s.replacen("{}", "%u", 1);
+                format!("{arg_s}")
+            }
+            EvaluatedType::U64
+            | EvaluatedType::USize => {
+                literal_s = literal_s.replacen("{}", "%lu", 1);
                 format!("{arg_s}")
             }
             EvaluatedType::U128 => todo!(),
             EvaluatedType::I8
             | EvaluatedType::I16
-            | EvaluatedType::I32
-            | EvaluatedType::I64
-            | EvaluatedType::ISize => {
+            | EvaluatedType::I32 => {
                 literal_s = literal_s.replacen("{}", "%d", 1);
+                format!("{arg_s}")
+            }
+            EvaluatedType::I64
+            | EvaluatedType::ISize => {
+                literal_s = literal_s.replacen("{}", "%ld", 1);
                 format!("{arg_s}")
             }
             EvaluatedType::I128 => todo!(),
@@ -240,7 +246,7 @@ fn convert_args_to_c_format(
             }
             EvaluatedType::ToBeInferred => panic!("ToBeInferred cannot be printed!"),
             EvaluatedType::FloatingNum | EvaluatedType::Integer => {
-                panic!("ToBeInferred fl & num cannot be printed!")
+                panic!("Unexpected unresolved type in codegen: {t:?}")
             }
             EvaluatedType::Struct(_) => {
                 literal_s = literal_s.replacen("{}", "%s", 1);

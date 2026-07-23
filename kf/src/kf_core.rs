@@ -72,6 +72,7 @@ pub struct Context {
     pub side_nodes: Vec<SideNode>,
     pub glob_functs: HashMap<String, FunDeclaration>,
     pub glob_structs: HashMap<String, StructDecl>,
+    pub struct_order: Vec<String>,
     pub glob_enums: HashMap<String, EnumDecl>,
     /// first position is a global scope with global variables and consts
     pub temp_scope: Vec<ScopeLog>,
@@ -94,7 +95,7 @@ impl Context {
     }
 
     fn scope_pop(&mut self) -> Vec<(String, VarDefinition)> {
-        // loop over local variables and collect those
+        // over local variables and collect those
         // for which the types weren't deduced
         let not_deduced = self
             .scope_peek()
@@ -157,11 +158,9 @@ impl Context {
 
     fn update_var_type(&mut self, name: &str, t: EvaluatedType) -> Option<EvaluatedType> {
         // println!("Updating variable {name} to {t:?}");
-        let (t, indx) = if let Some(v) = self.scope_get_var_mut(name) {
-            (
-                std::mem::replace(&mut v.v_type.eval_type, t),
-                v.side_node_ref,
-            )
+        let indx = if let Some(v) = self.scope_get_var_mut(name) {
+            v.v_type.eval_type = t.clone();
+            v.side_node_ref
         } else {
             return None;
         };
@@ -181,6 +180,7 @@ impl InterRepr {
             side_nodes: Vec::with_capacity(syntree.flat.len()),
             glob_functs: HashMap::new(),
             glob_structs: HashMap::new(),
+            struct_order: Vec::new(),
             glob_enums: HashMap::new(),
             // add a global scope
             temp_scope: Vec::new(),
@@ -244,10 +244,19 @@ fn collect_glob_functions(
                 .members
                 .iter()
                 .filter_map(|m| {
-                    m.type_dec
-                        .typename()
-                        .and_then(|t| EvaluatedType::from_str(&t))
+                    m.type_dec.typename().and_then(|t| {
+                        EvaluatedType::from_str(&t).or_else(|| {
+                            // check if it's a previously defined struct or enum
+                            if ctx.glob_structs.contains_key(&t) {
+                                Some(EvaluatedType::Struct(t))
+                            } else if ctx.glob_enums.contains_key(&t) {
+                                Some(EvaluatedType::Enum(t))
+                            } else {
+                                None
+                            }
+                        })
                         .map(|et| (m.name.clone(), et))
+                    })
                 })
                 .collect();
             ctx.glob_structs.insert(
@@ -257,6 +266,7 @@ fn collect_glob_functions(
                     fields,
                 },
             );
+            ctx.struct_order.push(s.name.clone());
         }
         ast::Ntype::Enum(e) => {
             let variants: Vec<(String, Option<EvaluatedType>)> = e
@@ -631,7 +641,9 @@ fn calc_type_for_unary_logic_op(
     a: ast::NodeRef,
     ctx: &mut Context,
 ) -> Result<(), CompileMsgCol> {
-    calc_type_for_bool_cond(tree, parent, a, ctx)
+    calc_type_for_bool_cond(tree, parent, a, ctx)?;
+    set_type(parent, ctx, KfType::from_literal(EvaluatedType::Bool), None);
+    Ok(())
 }
 ///
 /// Calculate type for arithmetic unary operator like:
@@ -649,9 +661,10 @@ fn calc_type_for_unary_arithm_op(
     if !atype.is_numeric() && !atype.is_floating() {
         return Err(vec![comp_msg::error_numeric_type_expected(
             tree.get(parent).at,
-            atype,
+            atype.clone(),
         )]);
     }
+    set_type(parent, ctx, KfType::from_literal(atype), None);
     Ok(())
 }
 ///
@@ -1058,7 +1071,9 @@ fn determine_type_for_a_b(
     let a_int = atype == EvaluatedType::Integer;
     let b_int = btype == EvaluatedType::Integer;
     // integers
-    if a_int && btype.is_numeric() {
+    if a_int && b_int {
+        return Ok(EvaluatedType::Integer);
+    } else if a_int && btype.is_numeric() {
         // TODO: decide if 8 & 16-bits types should be promoted to isize/usize
         return Ok(btype);
     } else if b_int && atype.is_numeric() {

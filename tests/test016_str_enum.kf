@@ -1,0 +1,7 @@
+//ok
+enum Result { Ok(i32), Err(i32) }
+fn main() {
+    let v: str = "hello";
+    let r = Result :: Ok(42);
+    print("ok");
+}

@@ -1,0 +1,23 @@
+//303000300000ok
+fn main() {
+    let a: i8 = 10;
+    let b = 20;
+    let c: i8 = a + b;
+    print("{}", c);
+
+    let d = 1000;
+    let e = 2000;
+    let f: i16 = d + e;
+    print("{}", f);
+
+    let g: i32 = 100000;
+    let h = 200000;
+    let i = g + h;
+    print("{}", i);
+
+    let j = 0;
+    let k: i32 = 10;
+    if j * k == 0 {
+        print("{}", "ok");
+    }
+}

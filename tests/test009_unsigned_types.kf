@@ -1,0 +1,23 @@
+//150350003000000ok
+fn main() {
+    let a: u8 = 100;
+    let b: u8 = 50;
+    let c: u8 = a + b;
+    print("{}", c);
+
+    let d: u16 = 30000;
+    let e: u16 = 5000;
+    let f: u16 = d + e;
+    print("{}", f);
+
+    let g: u32 = 1000000;
+    let h: u32 = 2000000;
+    let i: u32 = g + h;
+    print("{}", i);
+
+    let j: u8 = 200;
+    let k: u8 = 155;
+    if j > k {
+        print("{}", "ok");
+    }
+}

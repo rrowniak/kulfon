@@ -91,8 +91,10 @@ impl<'a> CGen<'a> {
         let code = self.process_ast_node(&self.mid.syntree, self.mid.syntree.root, 0)?;
         // generate struct/enum defs first to collect stdlib requirements
         let mut struct_defs = String::new();
-        for (name, decl) in &self.mid.ctx.glob_structs {
-            struct_defs += &generators::gen_struct_def(name, &decl.fields, &mut self.ctx);
+        for name in &self.mid.ctx.struct_order {
+            if let Some(decl) = self.mid.ctx.glob_structs.get(name) {
+                struct_defs += &generators::gen_struct_def(name, &decl.fields, &mut self.ctx);
+            }
         }
         let mut enum_defs = String::new();
         for (name, decl) in &self.mid.ctx.glob_enums {

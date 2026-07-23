@@ -1,4 +1,4 @@
-//0123
+//01203
 fn main() {
     let flag: bool = true;
     if flag {
@@ -11,12 +11,18 @@ fn main() {
         print("1");
     }
 
-    if false {
+    let x: i32 = 5;
+    if x > 10 {
         print("!");
-    } else if false {
-        print("!");
-    } else if true {
+    } else if x > 3 {
         print("2");
+    } else {
+        print("!");
+    }
+
+    let y: i32 = 1;
+    if y == 1 {
+        print("0");
     }
 
     if false {

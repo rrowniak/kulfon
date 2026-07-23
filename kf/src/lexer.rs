@@ -334,6 +334,15 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
                 }
                 TokenizeState::ParseLiteral => {
                     // check finish conditions
+                    if c == '.' && self.pos > 0 && self.code.as_bytes()[self.pos - 1].is_ascii_digit() {
+                        // check if next char is a digit -> float literal
+                        if let Some((_, nc)) = self.iter.clone().next() {
+                            if nc.is_ascii_digit() {
+                                // continue parsing as float literal
+                                continue;
+                            }
+                        }
+                    }
                     if !(c.is_ascii_alphanumeric() || c == '_') {
                         status = TokenizeState::Idle;
                         tokens.push(self.gen_token_literal_or_keyword(start_pos, start_point));

@@ -1,0 +1,18 @@
+//303020000200
+struct Point { x: i32, y: i32 }
+struct Size { w: i32, h: i32 }
+fn main() {
+    let p1 = Point { x: 10, y: 20 };
+    let p2 = Point { x: 40, y: 50 };
+    let dx = p2.x - p1.x;
+    let dy = p2.y - p1.y;
+    print("{}", dx);
+    print("{}", dy);
+
+    let s = Size { w: 100, h: 200 };
+    let area = s.w * s.h;
+    print("{}", area);
+
+    let product = p1.x * p1.y;
+    print("{}", product);
+}

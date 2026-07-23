@@ -1,0 +1,10 @@
+//12610
+struct Point { x: i32, y: i32 }
+struct Line { start: Point, finish: Point }
+fn main() {
+    let l = Line { start: Point { x: 1, y: 2 }, finish: Point { x: 6, y: 10 } };
+    print("{}", l.start.x);
+    print("{}", l.start.y);
+    print("{}", l.finish.x);
+    print("{}", l.finish.y);
+}

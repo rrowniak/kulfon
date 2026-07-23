@@ -1,0 +1,20 @@
+//truefalseyesnotyes
+fn main() {
+    let a: bool = true;
+    let b: bool = false;
+    print("{}", a);
+    print("{}", b);
+
+    let x: i32 = 10;
+    if x > 5 {
+        print("{}", "yes");
+    }
+
+    if !b {
+        print("{}", "not");
+    }
+
+    if x == 10 {
+        print("{}", "yes");
+    }
+}

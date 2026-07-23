@@ -1,0 +1,28 @@
+//106
+fn main() {
+    let mut sum: i32 = 0;
+    let mut i: i32 = 0;
+    while i < 5 {
+        sum = sum + i;
+        i = i + 1;
+    }
+    print("{}", sum);
+
+    let mut count: i32 = 0;
+    let mut j: i32 = 0;
+    loop {
+        if j >= 3 {
+            break;
+        }
+        let mut k: i32 = 0;
+        loop {
+            if k >= 2 {
+                break;
+            }
+            count = count + 1;
+            k = k + 1;
+        }
+        j = j + 1;
+    }
+    print("{}", count);
+}

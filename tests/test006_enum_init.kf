@@ -1,6 +1,8 @@
 //ok
 enum Color { Red, Green, Blue }
+enum Direction { North, South, East, West }
 fn main() {
     let c = Color :: Green;
-    println("ok");
+    let d = Direction :: North;
+    print("ok");
 }
