@@ -51,9 +51,9 @@ pub struct VarDefinition {
 }
 
 pub struct FunDeclaration {
-    args: Vec<ast::VarDecl>,
-    variadic: bool,
-    ret: ast::TypeDecl,
+    pub args: Vec<ast::VarDecl>,
+    pub variadic: bool,
+    pub ret: ast::TypeDecl,
 }
 
 pub struct StructDecl {
@@ -76,6 +76,8 @@ pub struct Context {
     pub glob_enums: HashMap<String, EnumDecl>,
     /// first position is a global scope with global variables and consts
     pub temp_scope: Vec<ScopeLog>,
+    /// Expected return type of the current function being type-checked
+    pub current_fn_ret_type: Option<EvaluatedType>,
 }
 
 impl Context {
@@ -184,6 +186,7 @@ impl InterRepr {
             glob_enums: HashMap::new(),
             // add a global scope
             temp_scope: Vec::new(),
+            current_fn_ret_type: None,
         };
         ctx.side_nodes
             .resize(syntree.flat.len(), SideNode::default());
@@ -389,6 +392,41 @@ fn eval_types(
         ast::Ntype::Continue => {
             set_type(nref, ctx, KfType::from_literal(EvaluatedType::Never), None)
         }
+        ast::Ntype::Return(ref expr) => {
+            if let Some(expr) = expr {
+                eval_types(tree, *expr, ctx)?;
+                let expr_type = get_side_node(*expr, ctx).eval_type.eval_type.clone();
+                if let Some(expected) = &ctx.current_fn_ret_type {
+                    let cmp = compare_types(expected, &expr_type);
+                    match cmp {
+                        TypeComp::Equal => {}
+                        TypeComp::Compliant(t) => {
+                            set_type_all_way_down(tree, *expr, ctx, &t)?;
+                        }
+                        TypeComp::Different => {
+                            return Err(vec![comp_msg::error_type_mismatch_var_assign(
+                                tree.get(nref).at,
+                                "return",
+                                expected,
+                                &expr_type,
+                            )]);
+                        }
+                    }
+                }
+            } else {
+                if let Some(expected) = &ctx.current_fn_ret_type {
+                    if *expected != EvaluatedType::Void {
+                        return Err(vec![comp_msg::error_type_mismatch_var_assign(
+                            tree.get(nref).at,
+                            "return",
+                            expected,
+                            &EvaluatedType::Void,
+                        )]);
+                    }
+                }
+            }
+            set_type(nref, ctx, KfType::from_literal(EvaluatedType::Never), None)
+        }
         // higher level structures
         ast::Ntype::Struct(_) => set_type_void(nref, ctx),
         ast::Ntype::Enum(_) => set_type_void(nref, ctx),
@@ -410,7 +448,30 @@ fn eval_types(
         }
         ast::Ntype::FnDef(ref fndef) => {
             ctx.scope_push(false);
+            for arg in &fndef.args {
+                let eval_type = arg
+                    .type_dec
+                    .typename()
+                    .and_then(|t| EvaluatedType::from_str(&t))
+                    .unwrap_or(EvaluatedType::ToBeInferred);
+                let side_node_ref = SideNodeRef(ctx.side_nodes.len() as u32);
+                ctx.side_nodes.push(SideNode {
+                    eval_type: KfType::from_literal(eval_type.clone()),
+                    eval_val: None,
+                });
+                ctx.scope_push_var(
+                    arg.name.clone(),
+                    VarDefinition {
+                        v_type: KfType::from_literal(eval_type),
+                        def_at: tree.get(nref).at,
+                        side_node_ref,
+                    },
+                );
+            }
+            let prev_ret_type = ctx.current_fn_ret_type.take();
+            ctx.current_fn_ret_type = fndef.ret.typename().and_then(|t| EvaluatedType::from_str(&t));
             eval_types(tree, fndef.body, ctx)?;
+            ctx.current_fn_ret_type = prev_ret_type;
             set_type_void(nref, ctx);
             let not_deduced_err = ctx
                 .scope_pop()
@@ -769,34 +830,50 @@ fn calc_type_for_fn_call(
                 expected,
             ));
         }
-        for (arg, arg_def) in args.iter().zip(fn_def.args.iter()) {
+        let arg_type_names: Vec<Option<String>> = fn_def
+            .args
+            .iter()
+            .map(|a| a.type_dec.typename())
+            .collect();
+        let ret_type_raw = fn_def.ret.typename().unwrap().clone();
+        let arg_types_dec: Vec<Option<EvaluatedType>> = arg_type_names
+            .iter()
+            .map(|t| t.as_deref().and_then(EvaluatedType::from_str))
+            .collect();
+        for (i, (arg, arg_type_dec)) in args.iter().zip(arg_types_dec.iter()).enumerate() {
             let arg_type = get_side_node(*arg, ctx).eval_type.eval_type.clone();
-            // TODO:
-            let arg_type_dec = EvaluatedType::from_str(&arg_def.type_dec.typename().unwrap());
             if let Some(arg_type_dec) = arg_type_dec {
-                if arg_type != arg_type_dec {
-                    errors.push(comp_msg::error_fn_call_arg_mismatch(
-                        tree.get(*arg).at,
-                        arg_type.clone(),
-                        arg_type_dec,
-                    ));
+                let cmp = compare_types(arg_type_dec, &arg_type);
+                match cmp {
+                    TypeComp::Equal => {}
+                    TypeComp::Compliant(t) => {
+                        set_type_all_way_down(tree, *arg, ctx, &t)?;
+                    }
+                    TypeComp::Different => {
+                        errors.push(comp_msg::error_fn_call_arg_mismatch(
+                            tree.get(*arg).at,
+                            arg_type.clone(),
+                            arg_type_dec.clone(),
+                        ));
+                    }
                 }
             } else {
-                // TODO: not the best place for reporting this error
-                // TODO:
-                let t = arg_def.type_dec.typename().unwrap().clone();
+                let t = arg_type_names[i].clone().unwrap_or_default();
                 errors.push(comp_msg::error_unrecognised_type(tree.get(*arg).at, &t));
             }
         }
         // set return type
-        // TODO:
-        let ret_type = if fn_def.ret.typename().unwrap().len() == 0 {
-            Some(EvaluatedType::Void)
-        } else {
-            // TODO:
-            EvaluatedType::from_str(&fn_def.ret.typename().unwrap())
-        };
-        if let Some(ret_type) = ret_type {
+        if ret_type_raw.is_empty() {
+            set_type(
+                parent,
+                ctx,
+                KfType {
+                    mutable: Some(false),
+                    eval_type: EvaluatedType::Void,
+                },
+                None,
+            );
+        } else if let Some(ret_type) = EvaluatedType::from_str(&ret_type_raw) {
             set_type(
                 parent,
                 ctx,
@@ -807,10 +884,7 @@ fn calc_type_for_fn_call(
                 None,
             );
         } else {
-            // TODO: not the best place for reporting return value type issues
-            // TODO:
-            let t = fn_def.ret.typename().unwrap().clone();
-            errors.push(comp_msg::error_unrecognised_type(tree.get(parent).at, &t));
+            errors.push(comp_msg::error_unrecognised_type(tree.get(parent).at, &ret_type_raw));
         }
         if errors.len() > 0 {
             return Err(errors);
@@ -1270,6 +1344,11 @@ fn walkthrough_generic(
         }
         ast::Ntype::Break => {}
         ast::Ntype::Continue => {}
+        ast::Ntype::Return(ref expr) => {
+            if let Some(expr) = expr {
+                walkthrough_generic(tree, *expr, ctx, visitor)?;
+            }
+        }
         // higher level structures
         ast::Ntype::Struct(_s) => {
             // TODO: s.type_id.TypeKind::Array - there might be a node to visit

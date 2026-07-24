@@ -18,6 +18,7 @@ keyword             mut             KwMut
 keyword             in              KwIn
 keyword             break           KwBreak
 keyword             continue        KwContinue
+keyword             return          KwReturn
 keyword             struct          KwStruct
 keyword             enum            KwEnum
 keyword             impl            KwImpl
@@ -105,7 +106,6 @@ operator            --              OpMinusMinus
 #res_keyword         mod             ResKeyword
 #res_keyword         move            ResKeyword
 #res_keyword         ref             ResKeyword
-#res_keyword         return          ResKeyword
 #res_keyword         static          ResKeyword
 #res_keyword         super           ResKeyword
 #res_keyword         trait           ResKeyword

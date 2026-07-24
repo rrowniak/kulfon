@@ -104,6 +104,42 @@ impl<'a> CGen<'a> {
         let mut ret = self.ctx.generate_context_code();
         ret += &struct_defs;
         ret += &enum_defs;
+        // generate forward declarations for user-defined functions only
+        let builtins = ["print", "println", "rand", "assert", "panic", "exit", "sleep", "env", "file_to_str", "file_to_bytes", "file_exists"];
+        for (name, decl) in &self.mid.ctx.glob_functs {
+            if name == "main" || builtins.contains(&name.as_str()) {
+                continue;
+            }
+            let ret_str = decl.ret.typename().unwrap_or_default();
+            let ret_type = if ret_str.is_empty() {
+                String::from("void")
+            } else {
+                let eval_type = type_system::EvaluatedType::from_str(&ret_str)
+                    .and_then(|et| generators::generate_type(et, &mut self.ctx));
+                match eval_type {
+                    Some(c_type) => String::from(c_type),
+                    None => continue,
+                }
+            };
+            let args: Vec<String> = decl
+                .args
+                .iter()
+                .filter_map(|arg| {
+                    let type_name = arg.type_dec.typename()?;
+                    let eval_type = type_system::EvaluatedType::from_str(&type_name)?;
+                    let c_type = generators::generate_type(eval_type, &mut self.ctx)?;
+                    Some(format!("{c_type} {}", arg.name))
+                })
+                .collect();
+            let args_str = if args.is_empty() {
+                if decl.variadic { "...".into() } else { "void".into() }
+            } else if decl.variadic {
+                format!("{}, ...", args.join(", "))
+            } else {
+                args.join(", ")
+            };
+            ret += &format!("{ret_type} {name}({args_str});\n");
+        }
         ret += code.as_str();
         Ok(ret)
     }
@@ -202,6 +238,15 @@ impl<'a> CGen<'a> {
             )),
             ast::Ntype::Break => Ok(format!("{}break;", self.indent_str(indent))),
             ast::Ntype::Continue => Ok(format!("{}continue;", self.indent_str(indent))),
+            ast::Ntype::Return(ref expr) => {
+                let indent_s = self.indent_str(indent);
+                if let Some(expr) = expr {
+                    let val = self.process_ast_node(tree, *expr, 0)?;
+                    Ok(format!("{indent_s}return {val};"))
+                } else {
+                    Ok(format!("{indent_s}return;"))
+                }
+            }
             ast::Ntype::Struct(_) => Ok("".into()),
             ast::Ntype::Enum(_) => Ok("".into()),
             ast::Ntype::Impl(_) => Ok("".into()),
@@ -233,14 +278,34 @@ impl<'a> CGen<'a> {
 
     fn transform_fn(&mut self, tree: &ast::Tree, fn_def: &ast::Fun, indent: usize) -> ResultC {
         let indent_s = self.indent_str(indent);
-        // TODO:
         let ret_type = if fn_def.ret.typename().unwrap().len() == 0 {
-            "void".into()
+            String::from("void")
         } else {
-            // TODO:
-            fn_def.ret.typename().unwrap().clone()
+            let type_name = fn_def.ret.typename().unwrap();
+            let eval_type = type_system::EvaluatedType::from_str(&type_name);
+            match eval_type.and_then(|et| generators::generate_type(et, &mut self.ctx)) {
+                Some(c_type) => String::from(c_type),
+                None => return Err(format!("Unknown return type: {}", type_name).into()),
+            }
         };
-        let args = String::new();
+        let args = fn_def
+            .args
+            .iter()
+            .filter_map(|arg| {
+                let type_name = arg.type_dec.typename()?;
+                let eval_type = type_system::EvaluatedType::from_str(&type_name)?;
+                let c_type = generators::generate_type(eval_type, &mut self.ctx)?;
+                Some(format!("{c_type} {}", arg.name))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let args = if args.is_empty() {
+            if fn_def.variadic { "...".into() } else { "void".into() }
+        } else if fn_def.variadic {
+            format!("{args}, ...")
+        } else {
+            args
+        };
         let body = self.process_ast_node(tree, fn_def.body, indent + INDENT_LEVEL)?;
         let c_fn = if self.scope_depth == 1 && fn_def.name == "main" {
             // this is a special case - main function
@@ -274,7 +339,12 @@ impl<'a> CGen<'a> {
         let mut scope_str = String::new();
         for e in scope_nodes.iter() {
             scope_str += "\n";
-            scope_str += &self.process_ast_node(tree, *e, indent)?;
+            let node_val = &tree.get(*e).val;
+            let node_s = self.process_ast_node(tree, *e, indent)?;
+            match node_val {
+                ast::Ntype::FnCall(..) => scope_str += &format!("{node_s};"),
+                _ => scope_str += &node_s,
+            }
         }
         let mut loc_vars = String::new();
         let loc_scope_vars = self.loc_variables.pop().unwrap();
@@ -303,8 +373,7 @@ impl<'a> CGen<'a> {
             args_v.push((arg_s, eval_t, eval_v));
         }
         let fn_call_s = generators::gen_fn_call(name, &args_v, &mut self.ctx);
-        let statement = format!("{indent_s}{fn_call_s};");
-        Ok(statement)
+        Ok(format!("{indent_s}{fn_call_s}"))
     }
 
     fn transform_struct_init(

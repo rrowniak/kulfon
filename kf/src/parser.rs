@@ -473,6 +473,16 @@ impl<'a> KfParser<'a> {
                     self.consume_tok(KfTokKind::SymSemi)?;
                     scope.push(tree.push(ast::Node::new(ast::Ntype::Continue, at)));
                 }
+                KfTokKind::KwReturn => {
+                    let at = self.consume_tok(KfTokKind::KwReturn)?;
+                    let expr = if self.check_current_tok(KfTokKind::SymSemi) {
+                        None
+                    } else {
+                        Some(self.parse_expression(tree)?)
+                    };
+                    self.consume_tok(KfTokKind::SymSemi)?;
+                    scope.push(tree.push(ast::Node::new(ast::Ntype::Return(expr), at)));
+                }
                 _ => {
                     scope.push(self.parse_expression(tree)?);
                     self.consume_tok(KfTokKind::SymSemi)?;

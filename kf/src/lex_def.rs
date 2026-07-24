@@ -16,6 +16,7 @@ pub enum KfTokKind {
     KwIn,
     KwBreak,
     KwContinue,
+    KwReturn,
     KwStruct,
     KwEnum,
     KwImpl,
@@ -73,6 +74,7 @@ impl KfTokKind {
             "in" => Some(KfTokKind::KwIn),
             "break" => Some(KfTokKind::KwBreak),
             "continue" => Some(KfTokKind::KwContinue),
+            "return" => Some(KfTokKind::KwReturn),
             "struct" => Some(KfTokKind::KwStruct),
             "enum" => Some(KfTokKind::KwEnum),
             "impl" => Some(KfTokKind::KwImpl),
@@ -117,36 +119,27 @@ impl KfTokKind {
         }
     }
 
-    pub fn is_special_literal(&self) -> bool {
+    pub fn is_operator(&self) -> bool {
         matches!(self,
-            KfTokKind::SlTrue | 
-            KfTokKind::SlFalse
+            KfTokKind::OpEq | 
+            KfTokKind::OpNe | 
+            KfTokKind::OpGt | 
+            KfTokKind::OpGe | 
+            KfTokKind::OpLt | 
+            KfTokKind::OpLe | 
+            KfTokKind::OpPlus | 
+            KfTokKind::OpMinus | 
+            KfTokKind::OpSlash | 
+            KfTokKind::OpStar | 
+            KfTokKind::OpBang | 
+            KfTokKind::OpAssign | 
+            KfTokKind::OpAnd | 
+            KfTokKind::OpOr | 
+            KfTokKind::OpPlusPlus | 
+            KfTokKind::OpMinusMinus
         )
     }
 
-    pub fn is_keyword(&self) -> bool {
-        matches!(self,
-            KfTokKind::KwIf | 
-            KfTokKind::KwElse | 
-            KfTokKind::KwFor | 
-            KfTokKind::KwWhile | 
-            KfTokKind::KwLoop | 
-            KfTokKind::KwFn | 
-            KfTokKind::KwPub | 
-            KfTokKind::KwLet | 
-            KfTokKind::KwMut | 
-            KfTokKind::KwIn | 
-            KfTokKind::KwBreak | 
-            KfTokKind::KwContinue | 
-            KfTokKind::KwStruct | 
-            KfTokKind::KwEnum | 
-            KfTokKind::KwImpl | 
-            KfTokKind::KwSelf | 
-            KfTokKind::KwSelfT
-        )
-    }
-
-    #[allow(dead_code)]
     pub fn is_symbol(&self) -> bool {
         matches!(self,
             KfTokKind::SymCurlyOpen | 
@@ -169,34 +162,42 @@ impl KfTokKind {
         )
     }
 
-    #[allow(dead_code)]
-    pub fn is_operator(&self) -> bool {
+    pub fn is_special_literal(&self) -> bool {
         matches!(self,
-            KfTokKind::OpEq | 
-            KfTokKind::OpNe | 
-            KfTokKind::OpGt | 
-            KfTokKind::OpGe | 
-            KfTokKind::OpLt | 
-            KfTokKind::OpLe | 
-            KfTokKind::OpPlus | 
-            KfTokKind::OpMinus | 
-            KfTokKind::OpSlash | 
-            KfTokKind::OpStar | 
-            KfTokKind::OpBang | 
-            KfTokKind::OpAssign | 
-            KfTokKind::OpAnd | 
-            KfTokKind::OpOr | 
-            KfTokKind::OpPlusPlus | 
-            KfTokKind::OpMinusMinus
+            KfTokKind::SlTrue | 
+            KfTokKind::SlFalse
+        )
+    }
+
+    pub fn is_keyword(&self) -> bool {
+        matches!(self,
+            KfTokKind::KwIf | 
+            KfTokKind::KwElse | 
+            KfTokKind::KwFor | 
+            KfTokKind::KwWhile | 
+            KfTokKind::KwLoop | 
+            KfTokKind::KwFn | 
+            KfTokKind::KwPub | 
+            KfTokKind::KwLet | 
+            KfTokKind::KwMut | 
+            KfTokKind::KwIn | 
+            KfTokKind::KwBreak | 
+            KfTokKind::KwContinue | 
+            KfTokKind::KwReturn | 
+            KfTokKind::KwStruct | 
+            KfTokKind::KwEnum | 
+            KfTokKind::KwImpl | 
+            KfTokKind::KwSelf | 
+            KfTokKind::KwSelfT
         )
     }
 
 }
 
 pub const SPEC_SYMBOLS: &[&str] = &[
-   "{",    "}", 
-   "(",    ")",    "[",    "]",    "&",    "::",    "@",    ";",    ":",    "->", 
-   ".",    ",",    "...",    "#[",    "_",    "==",    "!=",    ">",    ">=",    "<", 
-   "<=",    "+",    "-",    "/",    "*",    "!",    "=",    "&&",    "||",    "++", 
-   "--", 
+   "{", 
+   "}",    "(",    ")",    "[",    "]",    "&",    "::",    "@",    ";",    ":", 
+   "->",    ".",    ",",    "...",    "#[",    "_",    "==",    "!=",    ">",    ">=", 
+   "<",    "<=",    "+",    "-",    "/",    "*",    "!",    "=",    "&&",    "||", 
+   "++",    "--", 
 ];

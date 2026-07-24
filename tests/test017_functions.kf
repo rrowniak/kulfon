@@ -1,0 +1,54 @@
+//hello37ok656667300042ABC
+fn greet() {
+    print("{}", "hello");
+}
+
+fn add(a: i32, b: i32) -> i32 {
+    let sum = a + b;
+    return sum;
+}
+
+fn no_args() {
+    print("{}", "ok");
+}
+
+fn multi_types(x: i32, y: i32, z: i32) {
+    print("{}", x);
+    print("{}", y);
+    print("{}", z);
+}
+
+fn call_chain() {
+    no_args();
+}
+
+fn nested_call(a: i32, b: i32) -> i32 {
+    return add(a, b);
+}
+
+fn early_return(x: i32) -> i32 {
+    if x == 0 {
+        return 0;
+    }
+    return x;
+}
+
+fn void_return() {
+    print("{}", "ABC");
+    return;
+}
+
+fn main() {
+    greet();
+    let result = add(30, 7);
+    print("{}", result);
+    call_chain();
+    multi_types(65, 66, 67);
+    let r2 = nested_call(100, 200);
+    print("{}", r2);
+    let r3 = early_return(0);
+    print("{}", r3);
+    let r4 = early_return(42);
+    print("{}", r4);
+    void_return();
+}

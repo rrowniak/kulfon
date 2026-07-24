@@ -330,6 +330,7 @@ pub enum Ntype {
     Loop(Loop),
     Break,
     Continue,
+    Return(Option<NodeRef>),
     // === Declarations ===
     Struct(Struct),
     #[allow(dead_code)]
